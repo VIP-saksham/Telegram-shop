@@ -12,6 +12,16 @@ the same instant. The two-column indexes that backed the old ORDER BYs are
 replaced by three-column ones; a uniformly descending sort is served by scanning
 them backwards, so no DESC index is needed.
 """
+
+# =============================================================================
+#  Copyright (c) 2026 Saksham Swaroop (@truenakshu)  |  GitHub: VIP-saksham
+#  LinkedIn: sakshamswaroop
+#
+#  All rights reserved. This source code is the private property of the
+#  author. Copying, modifying, redistributing or deploying any part of this
+#  file WITHOUT the author's written permission is strictly prohibited.
+#  For licensing / permission: https://t.me/truenakshu
+# =============================================================================
 from typing import Sequence, Union
 
 from alembic import op

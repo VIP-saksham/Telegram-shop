@@ -8,6 +8,16 @@ Adds sale_percent (discount %) and sale_until (UTC expiry) to goods so a product
 can be put on a time-limited sale. Both nullable; a sale is active only while
 sale_until is in the future and sale_percent > 0.
 """
+
+# =============================================================================
+#  Copyright (c) 2026 Saksham Swaroop (@truenakshu)  |  GitHub: VIP-saksham
+#  LinkedIn: sakshamswaroop
+#
+#  All rights reserved. This source code is the private property of the
+#  author. Copying, modifying, redistributing or deploying any part of this
+#  file WITHOUT the author's written permission is strictly prohibited.
+#  For licensing / permission: https://t.me/truenakshu
+# =============================================================================
 from typing import Sequence, Union
 
 from alembic import op

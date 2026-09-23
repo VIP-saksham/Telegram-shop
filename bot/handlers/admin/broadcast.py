@@ -1,3 +1,13 @@
+# =============================================================================
+#  Copyright (c) 2026 Saksham Swaroop (@truenakshu)  |  GitHub: VIP-saksham
+#  LinkedIn: sakshamswaroop
+#
+#  All rights reserved. This source code is the private property of the
+#  author. Copying, modifying, redistributing or deploying any part of this
+#  file WITHOUT the author's written permission is strictly prohibited.
+#  For licensing / permission: https://t.me/truenakshu
+# =============================================================================
+
 from datetime import datetime
 from typing import Optional
 
@@ -43,13 +53,72 @@ async def send_message_callback_handler(call: CallbackQuery, state: FSMContext):
 
 @router.message(BroadcastFSM.waiting_message, F.text)
 async def broadcast_messages(message: Message, state: FSMContext):
-    """Executing mailing with progress bar"""
+    """Executing mailing with progress bar.
+
+    Accepts a typed message OR a reply: replying to a photo/video/document
+    broadcasts that exact media via copy_message.
+    """
     admin_id = message.from_user.id
 
     if admin_id in broadcast_managers:
         await message.answer(localize("broadcast.already_running"))
         return
     broadcast_managers[admin_id] = None
+
+    # Reply-mode: copy the replied-to media message verbatim to everyone.
+    src = message.reply_to_message
+    if isinstance(src, Message) and (src.photo or src.video or src.animation or src.audio or src.document):
+        users = await get_all_users()
+        user_ids = [int(row[0]) for row in users]
+        await message.delete()
+        progress_msg = await message.answer(
+            localize("broadcast.creating", ids=len(user_ids)),
+            reply_markup=_cancel_keyboard(),
+        )
+
+        async def update_progress_media(stats: BroadcastStats):
+            progress = (stats.sent + stats.failed + stats.blocked) / stats.total * 100
+            try:
+                await progress_msg.edit_text(
+                    localize("broadcast.progress",
+                             progress=progress,
+                             sent=stats.sent,
+                             total=stats.total,
+                             failed=stats.failed,
+                             time=int((datetime.now() - stats.start_time).total_seconds())),
+                    reply_markup=_cancel_keyboard(),
+                )
+            except (TelegramBadRequest, TelegramForbiddenError) as e:
+                await log_audit("broadcast_progress_fail", level="WARNING", details=str(e))
+
+        manager = BroadcastManager(bot=message.bot)
+        broadcast_managers[admin_id] = manager
+        try:
+            stats = await manager.broadcast_copy(
+                user_ids=user_ids,
+                from_chat_id=src.chat.id,
+                message_id=src.message_id,
+                progress_callback=update_progress_media,
+            )
+            duration = int(stats.duration) if stats.duration else 0
+            try:
+                await progress_msg.edit_text(
+                    localize("broadcast.done",
+                             total=stats.total,
+                             sent=stats.sent,
+                             failed=stats.failed,
+                             blocked=stats.blocked,
+                             success=f"{stats.success_rate:.1f}",
+                             duration=duration),
+                    reply_markup=back("send_message"),
+                )
+            except TelegramBadRequest as e:
+                await log_audit("broadcast_final_edit_fail", level="WARNING", details=str(e))
+            await log_audit("broadcast_sent", user_id=admin_id,
+                            details=f"admin={caller_name(message)}, media-copy, delivered={stats.sent}/{stats.total}, duration={duration}s")
+        finally:
+            broadcast_managers.pop(admin_id, None)
+        return
 
     try:
         # Validate broadcast message

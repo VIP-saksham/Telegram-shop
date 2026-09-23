@@ -4,6 +4,16 @@ Revision ID: 3f9d1b7a4a6c
 Revises: a2e0ad4f2c8d
 Create Date: 2025-08-08 12:00:00
 """
+
+# =============================================================================
+#  Copyright (c) 2026 Saksham Swaroop (@truenakshu)  |  GitHub: VIP-saksham
+#  LinkedIn: sakshamswaroop
+#
+#  All rights reserved. This source code is the private property of the
+#  author. Copying, modifying, redistributing or deploying any part of this
+#  file WITHOUT the author's written permission is strictly prohibited.
+#  For licensing / permission: https://t.me/truenakshu
+# =============================================================================
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import inspect, text

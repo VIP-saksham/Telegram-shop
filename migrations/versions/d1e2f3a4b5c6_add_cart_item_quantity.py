@@ -11,6 +11,16 @@ the cart was effectively a set. Those duplicates are collapsed into a single row
 carrying the count before the unique constraint goes on, otherwise the constraint
 cannot be created on a live database.
 """
+
+# =============================================================================
+#  Copyright (c) 2026 Saksham Swaroop (@truenakshu)  |  GitHub: VIP-saksham
+#  LinkedIn: sakshamswaroop
+#
+#  All rights reserved. This source code is the private property of the
+#  author. Copying, modifying, redistributing or deploying any part of this
+#  file WITHOUT the author's written permission is strictly prohibited.
+#  For licensing / permission: https://t.me/truenakshu
+# =============================================================================
 from typing import Sequence, Union
 
 from alembic import op

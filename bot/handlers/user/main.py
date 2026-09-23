@@ -1,3 +1,13 @@
+# =============================================================================
+#  Copyright (c) 2026 Saksham Swaroop (@truenakshu)  |  GitHub: VIP-saksham
+#  LinkedIn: sakshamswaroop
+#
+#  All rights reserved. This source code is the private property of the
+#  author. Copying, modifying, redistributing or deploying any part of this
+#  file WITHOUT the author's written permission is strictly prohibited.
+#  For licensing / permission: https://t.me/truenakshu
+# =============================================================================
+
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.enums.chat_type import ChatType
@@ -223,7 +233,13 @@ async def start(message: Message, state: FSMContext):
 
     markup = main_menu(role=role_data, channel=channel_username, helper=EnvKeys.HELPER_ID)
 
-    bot_name = await _bot_display_name(message.bot)
+    # Every /start lands in the general log group (not just money events).
+    from bot.database.methods.audit import log_audit_bg
+    log_audit_bg(
+        "user_start", user_id=user_id,
+        resource_type="User", resource_id=user_id,
+        details=f"start from @{message.from_user.username or message.from_user.first_name}",
+    )
     text = f"{banner(bot_name, localize('menu.hello', name=_esc(message.from_user.first_name or '')))}\n\n" \
         f"{localize('menu.start', name=bot_name)}"
     await message.answer(text, reply_markup=markup)

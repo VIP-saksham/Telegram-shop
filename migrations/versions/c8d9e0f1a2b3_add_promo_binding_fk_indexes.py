@@ -9,6 +9,16 @@ index: every Goods/Categories delete forced a sequential scan of promo_codes
 to find referencing rows, and "promos bound to this item/category" lookups did
 the same. Matches the index=True now declared on the model.
 """
+
+# =============================================================================
+#  Copyright (c) 2026 Saksham Swaroop (@truenakshu)  |  GitHub: VIP-saksham
+#  LinkedIn: sakshamswaroop
+#
+#  All rights reserved. This source code is the private property of the
+#  author. Copying, modifying, redistributing or deploying any part of this
+#  file WITHOUT the author's written permission is strictly prohibited.
+#  For licensing / permission: https://t.me/truenakshu
+# =============================================================================
 from typing import Sequence, Union
 
 from alembic import op

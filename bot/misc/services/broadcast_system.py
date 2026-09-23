@@ -1,3 +1,13 @@
+# =============================================================================
+#  Copyright (c) 2026 Saksham Swaroop (@truenakshu)  |  GitHub: VIP-saksham
+#  LinkedIn: sakshamswaroop
+#
+#  All rights reserved. This source code is the private property of the
+#  author. Copying, modifying, redistributing or deploying any part of this
+#  file WITHOUT the author's written permission is strictly prohibited.
+#  For licensing / permission: https://t.me/truenakshu
+# =============================================================================
+
 import asyncio
 from typing import List, Optional, Callable, Awaitable, Union
 from dataclasses import dataclass
@@ -109,6 +119,89 @@ class BroadcastManager:
                 return "failed"
 
         return "failed"
+
+    async def _copy_message_safe(
+            self,
+            user_id: int,
+            from_chat_id: int,
+            message_id: int,
+    ) -> str:
+        """copy_message variant of _send_message_safe (media broadcasts)."""
+        for attempt in range(self.retry_count):
+            try:
+                await self.bot.copy_message(
+                    chat_id=user_id,
+                    from_chat_id=from_chat_id,
+                    message_id=message_id,
+                    disable_notification=True,
+                )
+                return "sent"
+            except TelegramRetryAfter as e:
+                if attempt < self.retry_count - 1:
+                    await asyncio.sleep(e.retry_after)
+                    continue
+                return "failed"
+            except TelegramForbiddenError:
+                logger.debug(f"Bot blocked by user {user_id}")
+                return "blocked"
+            except TelegramBadRequest as e:
+                logger.error(f"Bad request copying to user {user_id}: {e}")
+                return "failed"
+            except Exception as e:
+                logger.error(f"Unknown error copying to {user_id}: {e}")
+                if attempt < self.retry_count - 1:
+                    await asyncio.sleep(1)
+                    continue
+                return "failed"
+        return "failed"
+
+    async def broadcast_copy(
+            self,
+            user_ids: List[int],
+            from_chat_id: int,
+            message_id: int,
+            progress_callback: Optional[Union[
+                Callable[[BroadcastStats], None],
+                Callable[[BroadcastStats], Awaitable[None]]
+            ]] = None
+    ) -> BroadcastStats:
+        """Broadcast a replied-to media message verbatim via copy_message."""
+        stats = BroadcastStats(
+            total=len(user_ids),
+            start_time=datetime.now()
+        )
+        self._cancelled = False
+
+        for i in range(0, len(user_ids), self.batch_size):
+            if self._cancelled:
+                logger.info("Media broadcast cancelled")
+                break
+            batch = user_ids[i:i + self.batch_size]
+            tasks = [
+                self._copy_message_safe(user_id, from_chat_id, message_id)
+                for user_id in batch
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if result == "sent":
+                    stats.sent += 1
+                elif result == "blocked":
+                    stats.blocked += 1
+                else:
+                    stats.failed += 1
+            if progress_callback:
+                try:
+                    if asyncio.iscoroutinefunction(progress_callback):
+                        await progress_callback(stats)
+                    else:
+                        progress_callback(stats)
+                except Exception as e:
+                    logger.error(f"Progress callback error: {e}")
+            if i + self.batch_size < len(user_ids):
+                await asyncio.sleep(self.batch_delay)
+
+        stats.end_time = datetime.now()
+        return stats
 
     async def broadcast(
             self,
