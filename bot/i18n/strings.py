@@ -636,6 +636,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "shop.goods.choose_cat": "Products: {category}",
     "upi.btn.send_utr": "Send UTR",
     "upi.btn.send_screenshot": "Send screenshot",
+    "referral.credited_notify": "💰 Rs.{amount} credited in your account from referral {name}!",
 },
 
 
@@ -1269,5 +1270,6 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
     "shop.goods.choose_cat": "Products: {category}",
     "upi.btn.send_utr": "Send UTR",
     "upi.btn.send_screenshot": "Send screenshot",
+    "referral.credited_notify": "💰 Rs.{amount} credited in your account from referral {name}!",
 },
 }

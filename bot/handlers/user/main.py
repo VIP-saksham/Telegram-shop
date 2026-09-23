@@ -163,8 +163,8 @@ async def start(message: Message, state: FSMContext):
 
     channel_username = _parse_channel_username()
 
-    # Entry gate: force-join channels -> captcha (new users) -> menu.
-    if not await run_gate(message, state):
+    # Entry gate: force-join channels -> captcha (every start) -> menu.
+    if not await run_gate(message, state, captcha=True):
         await _delete_quietly(message)
         return
 
@@ -190,9 +190,9 @@ async def back_to_menu_callback_handler(call: CallbackQuery, state: FSMContext):
 
     channel_username = _parse_channel_username()
 
-    # Menu returns pass the gate too: a user who left a force-join channel is
-    # stopped here again, and the captcha only fires for still-unverified users.
-    if not await run_gate(call, state):
+    # Menu returns re-check the force-join but skip the captcha — the puzzle
+    # runs on every /start, not on navigation.
+    if not await run_gate(call, state, captcha=False):
         return
 
     markup = main_menu(role=role, channel=channel_username, helper=EnvKeys.HELPER_ID)

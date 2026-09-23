@@ -18,10 +18,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters.state import StatesGroup, State
 
 from bot.database.methods import (
-    get_force_channels, get_captcha_passed, check_user_cached, check_role_cached,
-    check_user,
+    get_force_channels, check_user_cached, check_role_cached,
 )
-from bot.database.methods.read import CAPTCHA_SINCE, mark_captcha_passed, _utc_ts
+from bot.database.methods.read import mark_captcha_passed
 from bot.handlers.other import check_sub_channel
 from bot.keyboards import main_menu
 from bot.misc import EnvKeys
@@ -104,12 +103,15 @@ async def _missing_channels(bot, user_id: int) -> list[dict]:
     return missing
 
 
-async def run_gate(event, state: FSMContext) -> bool:
+async def run_gate(event, state: FSMContext, *, captcha: bool = True) -> bool:
     """Run the gate for this user.
 
     Returns True when the caller may continue showing the menu (or the gate
     just showed it itself); False when a gate screen was sent and the caller
     must stop.
+
+    `captcha=False` skips the puzzle for in-session returns (Back to menu);
+    every fresh /start verifies.
     """
     user_id = event.from_user.id
     bot = event.bot
@@ -125,20 +127,8 @@ async def run_gate(event, state: FSMContext) -> bool:
             await event.message.edit_text(text, reply_markup=kb.as_markup())
         return False
 
-    # 2) captcha — only for fresh signups that arrived via a referral invite
-    # (verified-signup rule). Direct /start users and existing users pass.
-    needs_captcha = False
-    if not await get_captcha_passed(user_id):
-        row = await check_user(user_id)
-        created = row.get("registration_date") if row else None
-        is_new = True
-        try:
-            is_new = created is not None and _utc_ts(created) >= CAPTCHA_SINCE
-        except (TypeError, AttributeError):
-            is_new = False
-        needs_captcha = bool(is_new and row and row.get("referral_id"))
-
-    if needs_captcha:
+    # 2) captcha — every /start, no exceptions
+    if captcha:
         a, b = random.randint(2, 9), random.randint(2, 9)
         _pending_captcha[user_id] = (a, b, time.monotonic())
         correct = a + b
@@ -224,10 +214,10 @@ async def gate_captcha_answer(call: CallbackQuery, state: FSMContext):
     _pending_captcha.pop(user_id, None)
     await call.answer(localize("gate.captcha_ok"))
 
-    # Persist the pass so the captcha never asks twice, then count the
-    # referral (verified signup) and pay the referrer's fixed reward.
+    # Persist the pass, then count the referral (verified signup) and pay
+    # the referrer's fixed reward with a notification.
     await mark_captcha_passed(user_id)
-    await _credit_referral(user_id)
+    await _credit_referral(call.bot, user_id)
 
     ok = True  # captcha solved; force-join already passed earlier in the flow
     missing = await _missing_channels(call.bot, user_id)
@@ -241,18 +231,37 @@ async def gate_captcha_answer(call: CallbackQuery, state: FSMContext):
         await _open_menu(call, state)
 
 
-async def _credit_referral(user_id: int) -> None:
-    """Credit the referrer's fixed reward for this (now verified) signup.
-
-    Runs once per user: only fires while the user's row is brand new (created
-    after CAPTCHA_SINCE with a referrer and still flagged unverified by the
-    reward bookkeeping in Operations).
-    """
+async def _credit_referral(bot, user_id: int) -> None:
+    """Credit the referrer's fixed reward for this (now verified) signup
+    and notify the referrer about the money."""
     from bot.database.methods.transactions import credit_referral_reward
+    from bot.database.methods.read import check_user
     try:
-        await credit_referral_reward(user_id)
+        credited = await credit_referral_reward(user_id)
     except Exception as e:  # noqa: BLE001 — reward must never block entry
         logger.warning(f"referral reward credit failed for {user_id}: {e}")
+        return
+    if not credited:
+        return
+
+    row = await check_user(user_id)
+    referrer = row.get("referral_id") if row else None
+    if not referrer:
+        return
+    invitee = esc(call_first_name(user_id, row))
+    try:
+        await bot.send_message(
+            referrer,
+            localize("referral.credited_notify",
+                     amount=EnvKeys.REFERRAL_REWARD, name=invitee),
+        )
+    except Exception as e:  # noqa: BLE001 — referrer may have blocked the bot
+        logger.debug(f"referral notify to {referrer} failed: {e}")
+
+
+def call_first_name(user_id: int, row: dict) -> str:
+    """Best-effort invitee name for the reward message."""
+    return str(row.get("first_name") or user_id)
 
 
 @router.callback_query(F.data == "gate_locked")
