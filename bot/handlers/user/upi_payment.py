@@ -42,7 +42,7 @@ from bot.logger_mesh import logger
 from bot.misc import EnvKeys
 from bot.i18n import localize, esc
 from bot.states import BalanceStates
-from bot.ui import banner, quote, kv, cbtn, SUCCESS, DANGER
+from bot.ui import banner, quote, kv, cbtn, SUCCESS, DANGER, PRIMARY
 
 router = Router()
 
@@ -161,12 +161,12 @@ async def upi_utr(message: Message, state: FSMContext):
         return
 
     await upi_set_utr(req_id, utr)
-    await state.update_data(upi_utr=utr)
+    # NOTE: state is intentionally NOT cleared here — upi_req / upi_utr are
+    # still needed by the screenshot step; it clears after the photo arrives.
     await message.answer(
         localize("upi.screenshot_prompt"),
         reply_markup=_screenshot_kb(),
     )
-    await state.clear()
 
 
 @router.callback_query(F.data == "upi_ask_ss")

@@ -73,6 +73,7 @@ async def _render_item_page(target, state: FSMContext, item_name: str, back_data
     Render the item detail page with optional promo discount.
     `target` can be CallbackQuery or Message.
     """
+    from bot.ui import banner, quote
     data = await state.get_data()
     if not back_data:
         back_data = data.get('item_back_data', 'gp_0')
@@ -166,9 +167,13 @@ async def _render_item_page(target, state: FSMContext, item_name: str, back_data
         low_balance=low_balance,
     )
 
+    from bot.ui import RULE
     text_lines = [
-        localize("shop.item.title", name=esc(item_name)),
-        localize("shop.item.description", description=esc(item_info_data["description"])),
+        f"<b>{localize('shop.item.title', name=esc(item_name))}</b>",
+        RULE,
+        "",
+        f"<i>{localize('shop.item.description', description=esc(item_info_data['description']))}</i>",
+        "",
         price_line,
         quantity_line,
     ]
@@ -191,13 +196,35 @@ async def _render_item_page(target, state: FSMContext, item_name: str, back_data
 
 async def _show_categories_page(call: CallbackQuery, state: FSMContext, page: int):
     """Render one page of the category list (shared by the shop entry + paginate handlers)."""
-    from bot.ui import banner, quote
+    from bot.ui import banner, quote, RULE
 
     paginator = LazyPaginator(query_categories, per_page=10)
 
     # Pre-fetch page items to build the index map used by the item_callback.
     page_items = await paginator.get_page(page)
     items_index = {cat: idx for idx, cat in enumerate(page_items)}
+
+    # Empty catalog (or empty page): a friendly out-of-stock card instead of
+    # a bare list with just a back button.
+    if not page_items and page == 0:
+        empty_markup = await lazy_paginated_keyboard(
+            paginator=paginator,
+            item_text=lambda cat: cat,
+            item_callback=lambda cat: cat,
+            page=page,
+            back_cb="back_to_menu",
+            nav_cb_prefix="categories-page_",
+        )
+        await call.message.edit_text(
+            f"{banner(localize('shop.categories.title'))}\n\n"
+            f"{quote(localize('shop.out_of_stock_all'))}",
+            reply_markup=empty_markup,
+        )
+        await state.update_data(
+            category_page_items=[],
+            category_page_num=page,
+        )
+        return
 
     markup = await lazy_paginated_keyboard(
         paginator=paginator,
@@ -248,6 +275,30 @@ async def _show_goods_page(call: CallbackQuery, state: FSMContext,
 
     page_items = await paginator.get_page(page)
     items_index = {item: i for i, item in enumerate(page_items)}
+
+    # Category with no items: out-of-stock card instead of an empty list.
+    if not page_items and page == 0:
+        empty_markup = await lazy_paginated_keyboard(
+            paginator=paginator,
+            item_text=lambda item: item,
+            item_callback=lambda item: item,
+            page=page,
+            back_cb=f"categories-page_{cat_page}",
+            nav_cb_prefix="gp_",
+        )
+        await call.message.edit_text(
+            f"{banner(localize('shop.goods.choose', category=esc(category_name)))}\n\n"
+            f"{quote(localize('shop.out_of_stock_all'))}",
+            reply_markup=empty_markup,
+        )
+        await state.update_data(
+            current_category=category_name,
+            goods_page_items=[],
+            goods_page_num=page,
+            categories_last_viewed_page=cat_page,
+        )
+        await state.set_state(ShopStates.viewing_goods)
+        return
 
     markup = await lazy_paginated_keyboard(
         paginator=paginator,
