@@ -157,7 +157,8 @@ async def start(message: Message, state: FSMContext):
 
     markup = main_menu(role=role_data, channel=channel_username, helper=EnvKeys.HELPER_ID)
 
-    await message.answer(localize("menu.start", name=message.bot.first_name or "shop"), reply_markup=markup)
+    me = await message.bot.me()
+    await message.answer(localize("menu.start", name=me.first_name or "shop"), reply_markup=markup)
     await _delete_quietly(message)
     await state.clear()
 
@@ -175,7 +176,8 @@ async def back_to_menu_callback_handler(call: CallbackQuery, state: FSMContext):
     channel_username = _parse_channel_username()
 
     markup = main_menu(role=role, channel=channel_username, helper=EnvKeys.HELPER_ID)
-    await call.message.edit_text(localize("menu.start", name=call.bot.first_name or "shop"), reply_markup=markup)
+    me = await call.bot.me()
+    await call.message.edit_text(localize("menu.start", name=me.first_name or "shop"), reply_markup=markup)
     await state.clear()
 
 
@@ -243,7 +245,8 @@ async def check_sub_to_channel(call: CallbackQuery, state: FSMContext):
             await _ensure_user(user_id)
             role = await check_role_cached(user_id) or 0
             markup = main_menu(role, channel_username, helper)
-            await call.message.edit_text(localize("menu.start", name=call.bot.first_name or "shop"), reply_markup=markup)
+            me = await call.bot.me()
+            await call.message.edit_text(localize("menu.start", name=me.first_name or "shop"), reply_markup=markup)
             await state.clear()
             return
 
