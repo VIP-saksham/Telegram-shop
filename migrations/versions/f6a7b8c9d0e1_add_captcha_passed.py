@@ -1,7 +1,7 @@
 """captcha_passed flag on users
 
 Revision ID: f6a7b8c9d0e1
-Revises: e5f6a7b8c9d0
+Revises: ab12cd34ef56
 Create Date: 2026-09-23 21:00:00.000000
 
 """
@@ -14,7 +14,7 @@ from sqlalchemy import inspect
 
 # revision identifiers, used by Alembic.
 revision: str = 'f6a7b8c9d0e1'
-down_revision: Union[str, None] = 'e5f6a7b8c9d0'
+down_revision: Union[str, None] = 'ab12cd34ef56'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
