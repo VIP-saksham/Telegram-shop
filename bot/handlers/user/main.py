@@ -18,6 +18,7 @@ from bot.database.methods.lazy_queries import query_user_operations_history
 from bot.handlers.other import check_sub_channel, _parse_channel_username
 from bot.keyboards import main_menu, back, profile_keyboard, check_sub
 from bot.misc import EnvKeys
+from bot.ui import banner, quote
 from bot.misc.metrics import get_metrics
 from bot.i18n import localize
 from bot.logger_mesh import logger
@@ -59,6 +60,20 @@ def _channel_chat_id(channel_username: str) -> int | str:
         except (TypeError, ValueError):
             logger.warning("CHANNEL_ID=%r is not a valid chat id; falling back to @%s", raw, channel_username)
     return f"@{channel_username}"
+
+
+async def _bot_display_name(bot) -> str:
+    """The bot's display name for the banner, with a safe fallback.
+
+    Tolerates failed getMe calls and non-string attributes so the start
+    screen never goes down over cosmetics.
+    """
+    try:
+        me = await bot.me()
+    except Exception:  # noqa: BLE001 — cosmetics must never block /start
+        return "shop"
+    name = getattr(me, "first_name", None)
+    return name if isinstance(name, str) and name.strip() else "shop"
 
 
 async def _delete_quietly(message: Message) -> None:
@@ -157,8 +172,10 @@ async def start(message: Message, state: FSMContext):
 
     markup = main_menu(role=role_data, channel=channel_username, helper=EnvKeys.HELPER_ID)
 
-    me = await message.bot.me()
-    await message.answer(localize("menu.start", name=me.first_name or "shop"), reply_markup=markup)
+    bot_name = await _bot_display_name(message.bot)
+    text = f"{banner(bot_name, localize('menu.hello', name=_esc(message.from_user.first_name or '')))}\n\n" \
+        f"{localize('menu.start', name=bot_name)}"
+    await message.answer(text, reply_markup=markup)
     await _delete_quietly(message)
     await state.clear()
 
@@ -176,8 +193,10 @@ async def back_to_menu_callback_handler(call: CallbackQuery, state: FSMContext):
     channel_username = _parse_channel_username()
 
     markup = main_menu(role=role, channel=channel_username, helper=EnvKeys.HELPER_ID)
-    me = await call.bot.me()
-    await call.message.edit_text(localize("menu.start", name=me.first_name or "shop"), reply_markup=markup)
+    bot_name = await _bot_display_name(call.bot)
+    text = f"{banner(bot_name, localize('menu.hello', name=_esc(call.from_user.first_name or '')))}\n\n" \
+        f"{localize('menu.start', name=bot_name)}"
+    await call.message.edit_text(text, reply_markup=markup)
     await state.clear()
 
 
@@ -215,13 +234,15 @@ async def profile_callback_handler(call: CallbackQuery, state: FSMContext):
     referral = EnvKeys.REFERRAL_PERCENT
 
     markup = profile_keyboard(referral, items, cart_count=cart_count)
-    text = (
-        f"{localize('profile.caption', name=_esc(tg_user.first_name or ''), id=user_id)}\n"
-        f"{localize('profile.id', id=user_id)}\n"
-        f"{localize('profile.balance', amount=balance, currency=EnvKeys.PAY_CURRENCY)}\n"
-        f"{localize('profile.total_topup', amount=overall_balance, currency=EnvKeys.PAY_CURRENCY)}\n"
-        f"{localize('profile.purchased_count', count=items)}"
-    )
+    text = "\n".join([
+        banner(localize("profile.title"), localize("profile.caption", name=_esc(tg_user.first_name or ''), id=user_id)),
+        localize("profile.id", id=user_id),
+        localize("profile.balance", amount=balance, currency=EnvKeys.PAY_CURRENCY),
+        localize("profile.total_topup", amount=overall_balance, currency=EnvKeys.PAY_CURRENCY),
+        localize("profile.purchased_count", count=items),
+        "",
+        quote(localize("profile.tip")),
+    ])
     try:
         await call.message.edit_text(text, reply_markup=markup, parse_mode='HTML')
     except TelegramBadRequest as e:
@@ -245,8 +266,10 @@ async def check_sub_to_channel(call: CallbackQuery, state: FSMContext):
             await _ensure_user(user_id)
             role = await check_role_cached(user_id) or 0
             markup = main_menu(role, channel_username, helper)
-            me = await call.bot.me()
-            await call.message.edit_text(localize("menu.start", name=me.first_name or "shop"), reply_markup=markup)
+            bot_name = await _bot_display_name(call.bot)
+            text = f"{banner(bot_name, localize('menu.hello', name=_esc(call.from_user.first_name or '')))}\n\n" \
+                f"{localize('menu.start', name=bot_name)}"
+            await call.message.edit_text(text, reply_markup=markup)
             await state.clear()
             return
 
@@ -281,12 +304,12 @@ async def _show_operations_page(call: CallbackQuery, state: FSMContext, user_id:
 
     if not items:
         await call.message.edit_text(
-            localize("history.title") + "\n\n" + localize("history.empty"),
+            f"{banner(localize('history.title'))}\n\n{quote(localize('history.empty'))}",
             reply_markup=back("profile"),
         )
         return
 
-    lines = [localize("history.title"), ""]
+    lines = [banner(localize("history.title")), ""]
     for op in items:
         op_type = op['type']
         amount = op['amount']

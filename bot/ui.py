@@ -1,16 +1,26 @@
-"""EagleX-inspired (not copied) UI design system: colored buttons + premium icons.
+"""Own-look UI design system — colored buttons + premium icons + text design.
 
-Colors:  success (green)  |  primary (blue)  |  danger (red)
-Our scheme: green = buy/positive actions, blue = navigation & back,
-red = admin entry & destructive actions.
+=== Buttons (Bot API 2026 `style` field) ===
+SUCCESS (green) — buy / top-up / confirm
+PRIMARY (blue)  — navigation & information
+DANGER (red)    — back from submenus, admin, destructive
 
-Icons are custom-emoji IDs; `icon_custom_emoji_id` renders when the bot's
-owner has Telegram Premium (or a collectible username), otherwise the plain
-text label is shown and nothing breaks.
+`icon_custom_emoji_id` renders when the bot owner has Telegram Premium
+(otherwise the plain label shows and nothing breaks).
+
+=== Text (HTML) ===
+The look is built from small primitives instead of long fixed strings:
+banner()  — top screen banner with a name accent
+rule()    — thin divider line
+kv()      — «key · value» row with value emphasized
+bar()     — 10-slot progress bar (stock, limits)
+quote()   — italic blockquote line for hints
 """
+from html import escape as esc
+
 from aiogram.types import InlineKeyboardButton
 
-# --- Button styles (Bot API "style" field) ---
+# --- Button styles ---
 SUCCESS = "success"   # green — buy / top-up / positive actions
 PRIMARY = "primary"   # blue  — navigation, profile, back
 DANGER = "danger"     # red   — admin entry, destructive actions
@@ -33,17 +43,20 @@ ICON = {
     "star": "5794068520488670034",        # star
     "vpn": "6305200926139361417",         # lock
     "pencil": "5260399854500191689",      # pencil
+    "box": "5362753053042400690",         # package
+    "fire": "5336279388641436838",        # flame
+    "cart": "5455918259979436457",        # cart
 }
 
 
 def btn(text: str, callback_data: str | None = None, *, url: str | None = None,
         color: str | None = None, icon: str | None = None) -> InlineKeyboardButton:
-    """Build an InlineKeyboardButton with EagleX-inspired styling.
+    """Build an InlineKeyboardButton with our styling.
 
-    color: SUCCESS / PRIMARY / DANGER (None = app default)
+    color: SUCCESS / PRIMARY / DANGER (None = no explicit style)
     icon:  key into ICON (or a raw custom-emoji id string)
     """
-    kwargs = {"text": text}
+    kwargs: dict = {"text": text}
     if callback_data:
         kwargs["callback_data"] = callback_data
     if url:
@@ -53,3 +66,44 @@ def btn(text: str, callback_data: str | None = None, *, url: str | None = None,
     if icon:
         kwargs["icon_custom_emoji_id"] = ICON.get(icon, icon)
     return InlineKeyboardButton(**kwargs)
+
+
+RULE = "─────────────────"
+
+
+def banner(title: str, hi: str | None = None) -> str:
+    """Top-of-screen banner: small caps title, rule, optional greeting.
+
+    The first word (glyph) is bold, the rest of the title is light-italic —
+    gives every screen the same recognizable 'card' opening.
+    """
+    head = f"<b>{esc(title)}</b>"
+    lines = [head, RULE]
+    if hi:
+        lines.append(f"<i>{hi}</i>")
+    return "\n".join(lines)
+
+
+def rule() -> str:
+    return RULE
+
+
+def kv(key: str, value: str, *, code: bool = False) -> str:
+    """One info row: glyph-free key, middot, bold (or code) value."""
+    v = f"<code>{esc(value)}</code>" if code else f"<b>{esc(value)}</b>"
+    return f"{esc(key)} · {v}"
+
+
+def bar(cur: int, total: int | None = None, width: int = 10) -> str:
+    """▓▓▓░░░░░ progress bar. total None -> cur/width fill ratio."""
+    if total:
+        filled = round(width * (1 if total <= 0 else cur / total))
+    else:
+        filled = round(width * (0 if cur <= 0 else (1 if cur >= width else cur / width)))
+    filled = max(0, min(width, filled))
+    return "▓" * filled + "░" * (width - filled)
+
+
+def quote(text: str) -> str:
+    """Italic hint line under a screen body."""
+    return f"<i>{esc(text)}</i>"

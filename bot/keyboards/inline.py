@@ -14,7 +14,6 @@ def header(title: str, subtitle: str = "") -> str:
         lines.append(subtitle)
     return "\n".join(lines)
 
-
 def main_menu(role: int, channel: str | None = None, helper: str | None = None) -> InlineKeyboardMarkup:
     """
     Main menu — EagleX style: green shop CTA, blue navigation, red admin.
@@ -74,9 +73,9 @@ def admin_console_keyboard(maintenance_mode: bool = False, role: int = 127) -> I
         kb.button(text=localize("admin.menu.shop"), callback_data="shop_management",
                   style=PRIMARY, icon_custom_emoji_id=ICON["shop"])
         kb.button(text=localize("admin.menu.goods"), callback_data="goods_management",
-                  style=PRIMARY, icon_custom_emoji_id=ICON["copy"])
+                  style=PRIMARY, icon_custom_emoji_id=ICON["box"])
         kb.button(text=localize("admin.menu.categories"), callback_data="categories_management",
-                  style=PRIMARY, icon_custom_emoji_id=ICON["buy"])
+                  style=PRIMARY, icon_custom_emoji_id=ICON["pencil"])
     if role & Permission.PROMO_MANAGE:
         kb.button(text=localize("admin.menu.promo"), callback_data="promo_mgmt",
                   style=PRIMARY, icon_custom_emoji_id=ICON["star"])
@@ -116,9 +115,7 @@ def back(cb: str = "menu", text: str | None = None) -> InlineKeyboardMarkup:
     """
     kb = InlineKeyboardBuilder()
     b = btn(text or localize("btn.back"), cb, color=PRIMARY, icon="back")
-    kb.button(text=b.text, callback_data=cb,
-              style=PRIMARY, icon_custom_emoji_id=ICON["back"])
-    kb.adjust(1)
+    kb.row(b)
     return kb.as_markup()
 
 
@@ -152,7 +149,6 @@ async def lazy_paginated_keyboard(
     for item in items:
         kb.button(text=item_text(item), callback_data=item_callback(item))
     kb.adjust(1)
-
     for row in (extra_rows or []):
         kb.row(*row)
 
@@ -245,12 +241,13 @@ def cart_keyboard(items: list[dict]) -> InlineKeyboardMarkup:
             callback_data=f"cart_remove:{item['id']}",
             style=DANGER, icon_custom_emoji_id=ICON["back"],
         ))
-    kb.row(InlineKeyboardButton(text=localize("btn.cart_checkout"), callback_data="cart_checkout",
-                                style=SUCCESS, icon_custom_emoji_id=ICON["buy"]))
-    kb.row(InlineKeyboardButton(text=localize("btn.cart_clear"), callback_data="cart_clear",
-                                style=PRIMARY, icon_custom_emoji_id=ICON["history"]))
-    kb.row(InlineKeyboardButton(text=localize("btn.back"), callback_data="profile",
-                                style=DANGER, icon_custom_emoji_id=ICON["back"]))
+    kb.button(text=localize("btn.cart_checkout"), callback_data="cart_checkout",
+              style=SUCCESS, icon_custom_emoji_id=ICON["buy"])
+    kb.button(text=localize("btn.cart_clear"), callback_data="cart_clear",
+              style=DANGER, icon_custom_emoji_id=ICON["cart"])
+    kb.button(text=localize("btn.back"), callback_data="profile",
+              style=PRIMARY, icon_custom_emoji_id=ICON["back"])
+    kb.adjust(1)
     return kb.as_markup()
 
 

@@ -35,8 +35,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
         # === Titles / Generic Texts ===
         "menu.title": "⛩️ Основное меню",
-        "menu.start": "👋 <b>Добро пожаловать</b> в <b>{name}</b>!\n<i>Выберите раздел из меню ниже</i>",
+        "menu.start": "<b>{name}</b> — приватный магазин цифровых товаров.\nВыбирай раздел ниже: покупки, баланс и история — в одном месте.",
+        "menu.hello": "Привет, {name}! Готов к покупкам?",
         "profile.caption": "👤 <b>Профиль</b> — <a href='tg://user?id={id}'>{name}</a>",
+        "profile.title": "Профиль",
+        "profile.tip": "Нужна помощь? Кнопка «Поддержка» всегда в главном меню.",
         "rules.not_set": "❌ Правила не были добавлены",
 
         # === Subscription Flow ===
@@ -50,11 +53,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "btn.purchased": "🎁 Купленные товары",
 
         # === Profile Info Lines ===
-        "profile.id": "🆔 <b>ID</b> — <code>{id}</code>",
-        "profile.balance": "💳 <b>Баланс</b> — <code>{amount}</code> {currency}",
-        "profile.total_topup": "💵 <b>Всего пополнено</b> — <code>{amount}</code> {currency}",
-        "profile.purchased_count": "🎁 <b>Куплено товаров</b> — {count} шт",
-        "profile.registration_date": "🕢 <b>Дата регистрации</b> — <code>{dt}</code>",
+        "profile.id": "аккаунт · <code>{id}</code>",
+        "profile.balance": "баланс · <b>{amount}</b> {currency}",
+        "profile.total_topup": "пополнено · <b>{amount}</b> {currency}",
+        "profile.purchased_count": "покупок · <b>{count}</b>",
+        "profile.registration_date": "с нами с · <code>{dt}</code>",
 
         # === Referral ===
         "referral.title": "💚 Реферальная система",
@@ -505,8 +508,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
         # === Operation History ===
         "btn.operation_history": "📋 История операций",
-        "history.title": "📋 <b>История операций</b>",
-        "history.empty": "История операций пуста.",
+        "history.title": "История операций",
+        "history.empty": "Пока пусто. Первая операция появится здесь сразу после покупки.",
         "history.topup": "💰 Пополнение: +{amount} {currency}",
         "history.purchase": "🛒 Покупка: {amount} {currency}",
         "history.referral": "🎲 Реферальный бонус: +{amount} {currency}",
@@ -575,8 +578,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
         # === Titles / Generic Texts ===
         "menu.title": "⛩️ Main menu",
-        "menu.start": "👋 <b>Welcome</b> to <b>{name}</b>!\n<i>Choose a section from the menu below</i>",
+        "menu.start": "<b>{name}</b> — a private shop for digital goods.\nPick a section below: purchases, balance and history in one place.",
+        "menu.hello": "Hey {name}! Ready to shop?",
         "profile.caption": "👤 <b>Profile</b> — <a href='tg://user?id={id}'>{name}</a>",
+        "profile.title": "Profile",
+        "profile.tip": "Need help? The «Support» button is always in the main menu.",
         "rules.not_set": "❌ Rules have not been added",
 
         # === Profile ===
@@ -590,11 +596,11 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "subscribe.open_channel": "Open channel",
 
         # === Profile Info Lines ===
-        "profile.id": "🆔 <b>ID</b> — <code>{id}</code>",
-        "profile.balance": "💳 <b>Balance</b> — <code>{amount}</code> {currency}",
-        "profile.total_topup": "💵 <b>Total topped up</b> — <code>{amount}</code> {currency}",
-        "profile.purchased_count": "🎁 <b>Purchased items</b> — {count} pcs",
-        "profile.registration_date": "🕢 <b>Registered at</b> — <code>{dt}</code>",
+        "profile.id": "account · <code>{id}</code>",
+        "profile.balance": "balance · <b>{amount}</b> {currency}",
+        "profile.total_topup": "topped up · <b>{amount}</b> {currency}",
+        "profile.purchased_count": "purchases · <b>{count}</b>",
+        "profile.registration_date": "member since · <code>{dt}</code>",
 
         # === Referral ===
         "referral.title": "💚 Referral system",
@@ -1045,8 +1051,8 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
 
         # === Operation History ===
         "btn.operation_history": "📋 Operation History",
-        "history.title": "📋 <b>Operation History</b>",
-        "history.empty": "Operation history is empty.",
+        "history.title": "Operation History",
+        "history.empty": "Nothing here yet. Your first operation will appear right after a purchase.",
         "history.topup": "💰 Top-up: +{amount} {currency}",
         "history.purchase": "🛒 Purchase: {amount} {currency}",
         "history.referral": "🎲 Referral bonus: +{amount} {currency}",
