@@ -7,3 +7,4 @@ class BalanceStates(StatesGroup):
     waiting_payment = State()
     waiting_utr = State()
     waiting_screenshot = State()
+    waiting_proof = State()

@@ -1,6 +1,7 @@
 import hashlib
 import json
 from decimal import Decimal, ROUND_HALF_UP
+from typing import Final
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message, PreCheckoutQuery, SuccessfulPayment
@@ -22,6 +23,32 @@ from bot.i18n import localize, esc
 from bot.states import BalanceStates
 
 router = Router()
+
+# Public showcase group where every purchase is announced (plain link invite
+# bait for the channel) — empty env disables it.
+PUBLIC_BUY_LOG_ID: Final = "-1002022181117"
+
+
+async def _send_public_buy_log(bot, *, item_name: str, price, username: str,
+                               user_id: int, unique_id: str) -> None:
+    """Post a pretty public purchase announcement to the showcase group."""
+    from html import escape as _h
+    try:
+        await bot.send_message(
+            PUBLIC_BUY_LOG_ID,
+            localize(
+                "buylog.public",
+                item=_h(item_name), price=price,
+                currency=EnvKeys.PAY_CURRENCY,
+                user=_h(username), uid=user_id,
+                order=unique_id,
+            ),
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+    except Exception as e:  # noqa: BLE001 — showcase must never break buying
+        from bot.logger_mesh import logger
+        logger.debug(f"public buy log failed: {e}")
 
 
 async def _notify_referrer_bonus(bot, user_id: int, amount: Decimal | int, payer_name: str, payer_id: int):
@@ -218,6 +245,60 @@ async def process_replenish_balance(call: CallbackQuery, state: FSMContext):
         logger.error(f"Payment processing error: {e}")
         await state.clear()
         await call.answer(localize("errors.something_wrong"), show_alert=True)
+
+
+@router.callback_query(F.data.startswith("proof:"))
+async def proof_request_handler(call: CallbackQuery, state: FSMContext):
+    """User says "send proof" — ask for the payment screenshot, forward to support."""
+    await state.clear()
+    await call.message.answer(localize("receipt.proof.prompt"), reply_markup=back("back_to_menu"))
+    await state.set_state(BalanceStates.waiting_proof)
+
+
+@router.message(BalanceStates.waiting_proof, F.photo)
+async def proof_photo_handler(message: Message, state: FSMContext):
+    """Forward the proof to the support room and confirm to the buyer."""
+    room = EnvKeys.HELPER_ID or EnvKeys.LOG_GROUP_ID
+    caption = localize("receipt.proof.to_room", user=esc(caller_name(message)), uid=message.from_user.id)
+    try:
+        if room:
+            await message.bot.send_photo(chat_id=room, photo=message.photo[-1].file_id, caption=caption, parse_mode="HTML")
+            await message.answer(localize("receipt.proof.sent"), reply_markup=close())
+        else:
+            await message.answer(localize("receipt.proof.no_room"), reply_markup=close())
+    except Exception as e:  # noqa: BLE001
+        from bot.logger_mesh import logger
+        logger.warning(f"proof forward failed: {e}")
+        await message.answer(localize("receipt.proof.no_room"), reply_markup=close())
+    await state.clear()
+
+
+@router.message(BalanceStates.waiting_proof)
+async def proof_not_photo(message: Message, state: FSMContext):
+    await message.answer(localize("receipt.proof.need_photo"))
+
+
+@router.callback_query(F.data.startswith("notworking:"))
+async def not_working_handler(call: CallbackQuery, state: FSMContext):
+    """Flag the item as not working — support room gets an alert with the order id."""
+    try:
+        bought_id = int(call.data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        bought_id = 0
+
+    room = EnvKeys.HELPER_ID or EnvKeys.LOG_GROUP_ID
+    text = localize("receipt.notworking.to_room", user=esc(caller_name(call)),
+                    uid=call.from_user.id, order=bought_id)
+    try:
+        if room:
+            await call.bot.send_message(room, text, parse_mode="HTML")
+            await call.answer(localize("receipt.notworking.sent"), show_alert=True)
+        else:
+            await call.answer(localize("receipt.proof.no_room"), show_alert=True)
+    except Exception as e:  # noqa: BLE001
+        from bot.logger_mesh import logger
+        logger.warning(f"not-working alert failed: {e}")
+        await call.answer(localize("receipt.proof.no_room"), show_alert=True)
 
 
 @router.callback_query(F.data == "check")
@@ -518,10 +599,19 @@ async def buy_item_callback_handler(call: CallbackQuery, state: FSMContext):
         await state.update_data(applied_promo=None)
 
         from bot.keyboards.inline import simple_buttons
-        buttons = [
-            (f"📦 {purchase_data['item_name']}", f"bought-item:{purchase_data['bought_id']}:back_to_item"),
-            (localize("btn.back"), "back_to_item"),
-        ]
+        from bot.ui import cbtn, SUCCESS, DANGER, PRIMARY
+        from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+        # Post-purchase actions: proof, not-working, help, my item.
+        kb = InlineKeyboardBuilder()
+        kb.row(
+            cbtn(localize("receipt.btn.send_proof"), f"proof:{purchase_data['bought_id']}", color=SUCCESS, icon="share"),
+            cbtn(localize("receipt.btn.not_working"), f"notworking:{purchase_data['bought_id']}", color=DANGER, icon="help"),
+        )
+        kb.row(
+            cbtn(localize("btn.help"), "help_menu", color=PRIMARY, icon="help"),
+            cbtn(localize("receipt.btn.my_item"), f"bought-item:{purchase_data['bought_id']}:back_to_item", color=PRIMARY, icon="box"),
+        )
 
         await call.message.edit_text(
             localize(
@@ -536,8 +626,18 @@ async def buy_item_callback_handler(call: CallbackQuery, state: FSMContext):
                 currency=EnvKeys.PAY_CURRENCY,
             ),
             parse_mode='HTML',
-            reply_markup=simple_buttons(buttons),
+            reply_markup=kb.as_markup(),
         )
+
+        # Styled public buy-log into the showcase group (fire-and-forget).
+        safe_create_task(_send_public_buy_log(
+            call.bot,
+            item_name=purchase_data['item_name'],
+            price=purchase_data['price'],
+            username=username,
+            user_id=call.from_user.id,
+            unique_id=purchase_data['unique_id'],
+        ))
 
         safe_create_task(log_audit(
             "purchase",

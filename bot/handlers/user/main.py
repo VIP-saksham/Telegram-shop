@@ -13,6 +13,7 @@ from bot.database.methods import (
     select_user_operations_total, select_user_items, check_user_cached,
     get_role_id_by_name
 )
+from bot.database.models import Permission
 from bot.database.methods.read import get_cart_count, invalidate_user_cache
 from bot.database.methods.lazy_queries import query_user_operations_history
 from bot.handlers.other import check_sub_channel, _parse_channel_username
@@ -103,6 +104,58 @@ async def _is_subscribed(bot, channel_username: str, user_id: int) -> bool | Non
         logger.warning(f"Channel subscription check failed for user {user_id}: {e}")
         return None
     return await check_sub_channel(chat_member)
+
+
+@router.message(F.text.startswith('/redeem'))
+async def redeem_command(message: Message, state: FSMContext):
+    """/redeem — jump straight to the promo-code entry."""
+    if message.chat.type != ChatType.PRIVATE:
+        return
+    await state.clear()
+    from bot.states import PromoFSM
+    from bot.keyboards import back
+    await message.answer(localize("promo.enter_redeem_code"), reply_markup=back("back_to_menu"))
+    await state.set_state(PromoFSM.waiting_redeem_code)
+
+
+@router.message(F.text.startswith('/help'))
+async def help_command(message: Message, state: FSMContext):
+    """/help — open the Help tab."""
+    if message.chat.type != ChatType.PRIVATE:
+        return
+    await state.clear()
+    from bot.ui import banner, quote
+    from bot.keyboards import help_keyboard
+    text = "\n".join([
+        banner(localize("help.title")),
+        "",
+        localize("help.body"),
+        "",
+        quote(localize("help.tip")),
+    ])
+    await message.answer(text, reply_markup=help_keyboard())
+
+
+@router.message(F.text.startswith('/ac'))
+async def ac_command(message: Message, state: FSMContext):
+    """/ac — admin panel shortcut (permission-checked)."""
+    if message.chat.type != ChatType.PRIVATE:
+        return
+    await state.clear()
+
+    role = await check_role_cached(message.from_user.id) or 0
+    if not Permission.has_any_admin_perm(role):
+        await message.answer(localize("admin.menu.rights"))
+        return
+
+    from bot.keyboards import admin_console_keyboard
+    from bot.middleware.security import get_auth_middleware
+    mw = get_auth_middleware()
+    maintenance = mw.maintenance_mode if mw else False
+    await message.answer(
+        localize("admin.menu.main"),
+        reply_markup=admin_console_keyboard(maintenance_mode=maintenance, role=role),
+    )
 
 
 @router.message(F.text.startswith('/start'))
@@ -336,8 +389,45 @@ async def check_sub_to_channel(call: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "operation_history")
 async def operation_history_handler(call: CallbackQuery, state: FSMContext):
+    """History hub: Payments / Your products / Coupon history."""
+    from bot.ui import banner, quote, cbtn, SUCCESS, PRIMARY, DANGER
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+    kb = InlineKeyboardBuilder()
+    kb.row(cbtn(localize("history.btn.payments"), "history_payments", color=SUCCESS, icon="usdt"))
+    kb.row(cbtn(localize("history.btn.products"), "bought_items", color=PRIMARY, icon="box"))
+    kb.row(cbtn(localize("history.btn.coupons"), "history_coupons", color=PRIMARY, icon="star"))
+    kb.row(cbtn(localize("btn.back"), "profile", color=DANGER, icon="back"))
+
+    text = f"{banner(localize('history.title'))}\n\n{quote(localize('history.hub_hint'))}"
+    await call.message.edit_text(text, reply_markup=kb.as_markup())
+    await state.clear()
+
+
+@router.callback_query(F.data == "history_payments")
+async def history_payments_handler(call: CallbackQuery, state: FSMContext):
     user_id = call.from_user.id
     await _show_operations_page(call, state, user_id, 0)
+
+
+@router.callback_query(F.data == "history_coupons")
+async def history_coupons_handler(call: CallbackQuery, state: FSMContext):
+    """Coupon (promo) redemption history for this user."""
+    from bot.ui import banner, quote
+    from bot.database.methods.read import get_user_promo_redemptions
+
+    rows = await get_user_promo_redemptions(call.from_user.id)
+    lines = [banner(localize("history.coupons.title")), ""]
+    if not rows:
+        lines.append(localize("history.coupons.empty"))
+    else:
+        for r in rows:
+            lines.append(localize("history.coupons.row", code=r["code"], amount=r["amount"],
+                                  currency=EnvKeys.PAY_CURRENCY, date=str(r["date"])[:16]))
+
+    from bot.keyboards import back
+    await call.message.edit_text("\n".join(lines), reply_markup=back("operation_history"))
+    await state.clear()
 
 
 @router.callback_query(F.data.startswith("ops-page_"))
