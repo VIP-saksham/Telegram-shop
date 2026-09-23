@@ -295,7 +295,10 @@ async def checking_payment(call: CallbackQuery, state: FSMContext):
                 "balance_replenish",
                 user_id=user_id,
                 resource_type="Payment",
-                details=f"name={caller_name(call)}, amount={balance_amount} {EnvKeys.PAY_CURRENCY}, provider=cryptopay",
+                details=(
+                    f"name={caller_name(call)}, amount={balance_amount} {EnvKeys.PAY_CURRENCY}, "
+                    f"provider=cryptopay, status=paid, invoice_id={invoice_id}"
+                ),
             ))
 
         elif status == "active":
@@ -412,7 +415,10 @@ async def successful_payment_handler(message: Message):
         "balance_replenish",
         user_id=user_id,
         resource_type="Payment",
-        details=f"name={caller_name(message)}, amount={amount} {EnvKeys.PAY_CURRENCY}, provider={suffix}",
+        details=(
+            f"name={caller_name(message)}, amount={amount} {EnvKeys.PAY_CURRENCY}, "
+            f"provider={suffix}, charge={external_id[:40]}"
+        ),
     ))
 
 

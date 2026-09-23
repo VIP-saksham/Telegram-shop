@@ -17,10 +17,19 @@ _LOG_LEVELS = {
 }
 
 
+def _is_money_action(action: str) -> bool:
+    """Whether this audit action belongs in the money room (payments+purchases)."""
+    a = (action or "").lower()
+    return any(k in a for k in ("payment", "crypto", "stars", "fiat", "topup",
+                                "replenish", "invoice", "referral_bonus",
+                                "purchase", "cart", "buy", "checkout"))
+
+
 def _log_group_enabled() -> bool:
-    """Whether the Telegram log group is configured and not explicitly disabled."""
-    raw = os.getenv("LOG_GROUP_ID", "")
-    return bool(raw.strip()) and os.getenv("LOG_GROUP_EVENTS", "all").lower() != "off"
+    """Whether any Telegram log group is configured and not explicitly disabled."""
+    if os.getenv("LOG_GROUP_EVENTS", "all").lower() == "off":
+        return False
+    return bool(os.getenv("LOG_GROUP_ID", "").strip() or os.getenv("PAYMENT_LOG_GROUP_ID", "").strip())
 
 
 def _log_group_wants(action: str, level: str) -> bool:
@@ -87,13 +96,12 @@ def _format_audit_line(action: str, level: str, user_id, resource_type, resource
     return f"{line}\n🕘 {stamp}"
 
 
-async def _send_to_log_group(text: str) -> None:
-    """Fire-and-forget delivery of one HTML message to the configured log group."""
+async def _send_to_log_group(chat_id: str, text: str) -> None:
+    """Fire-and-forget delivery of one HTML message to one log group."""
     from aiogram import Bot
     from aiogram.client.default import DefaultBotProperties
     from aiogram.exceptions import TelegramAPIError
 
-    chat_id = os.getenv("LOG_GROUP_ID", "").strip()
     if not chat_id:
         return
     try:
@@ -110,9 +118,11 @@ async def _send_to_log_group(text: str) -> None:
 
 
 def notify_log_group(action: str, level: str, user_id, resource_type, resource_id, details, ip_address) -> None:
-    """Queue a mirror of this audit entry to the Telegram log group.
+    """Queue a mirror of this audit entry to the Telegram log group(s).
 
-    Never blocks or raises: logging must not be able to take the bot down.
+    Money events (payments + purchases) go to PAYMENT_LOG_GROUP_ID when set;
+    everything else goes to LOG_GROUP_ID. Never blocks or raises: logging
+    must not be able to take the bot down.
     """
     if not _log_group_enabled():
         return
@@ -123,7 +133,15 @@ def notify_log_group(action: str, level: str, user_id, resource_type, resource_i
         loop = asyncio.get_running_loop()
     except RuntimeError:
         return
-    task = loop.create_task(_send_to_log_group(text))
+    # Money trail gets its own room so it never drowns between admin chatter.
+    money = _is_money_action(action)
+    chat_id = (os.getenv("PAYMENT_LOG_GROUP_ID", "").strip() if money
+               else os.getenv("LOG_GROUP_ID", "").strip())
+    if not chat_id:
+        chat_id = os.getenv("LOG_GROUP_ID", "").strip()
+    if not chat_id:
+        return
+    task = loop.create_task(_send_to_log_group(chat_id, text))
     _log_group_tasks.add(task)
     task.add_done_callback(_log_group_tasks.discard)
 

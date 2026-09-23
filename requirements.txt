@@ -3,7 +3,8 @@
 
 # Core
 python-dotenv==1.0.1
-aiogram==3.22.0
+# 3.31+ required: InlineKeyboardButton.style + icon_custom_emoji_id (Bot API 9.4)
+aiogram==3.31.0
 SQLAlchemy==2.0.43
 alembic==1.16.5
 aiohttp==3.12.15

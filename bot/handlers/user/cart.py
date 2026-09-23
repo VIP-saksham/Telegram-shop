@@ -369,12 +369,17 @@ async def cart_checkout_confirm_handler(call: CallbackQuery, state: FSMContext):
         reply_markup=_receipt_keyboard(results),
     )
 
+    from collections import Counter
     from bot.database.methods.audit import log_audit_bg
+    counts = Counter(r["item_name"] for r in results)
     log_audit_bg(
         "cart_checkout",
         user_id=user_id,
         resource_type="Cart",
-        details=f"items={len(results)}, total={total}",
+        details=(
+            f"name={username}, total={total} {EnvKeys.PAY_CURRENCY}, "
+            + ", ".join(f"{name} x{n}" for name, n in counts.most_common(15))
+        ),
     )
 
 

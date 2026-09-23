@@ -77,6 +77,9 @@ class EnvKeys(ABC):
     # Comma-separated comma list of which event classes go to the group:
     # all, payments, purchases, admin, security, errors
     LOG_GROUP_EVENTS: Final = _get_optional("LOG_GROUP_EVENTS", "all")
+    # Optional second room: payments + purchases go here instead of LOG_GROUP_ID
+    # (falls back to LOG_GROUP_ID when empty).
+    PAYMENT_LOG_GROUP_ID: Final = _get_optional("PAYMENT_LOG_GROUP_ID", "")
 
     # Sudo users: comma-separated Telegram IDs that get the SUDO role on /start
     # (full control, above ADMIN, below OWNER).
