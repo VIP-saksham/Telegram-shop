@@ -217,8 +217,8 @@ class TestCheckoutReceipt:
         markup = call.message.edit_text.call_args[1]["reply_markup"]
         labels = [b.text for row in markup.inline_keyboard for b in row]
         # Two units of one position must be distinguishable.
-        assert "📦 TwinItem (1)" in labels
-        assert "📦 TwinItem (2)" in labels
+        assert "TwinItem (1)" in labels
+        assert "TwinItem (2)" in labels
 
     async def test_receipt_state_does_not_store_delivered_secrets(self, make_callback_query,
                                                                   fsm_context, user_factory,
