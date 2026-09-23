@@ -49,6 +49,16 @@ async def upi_create_request(user_id: int, amount: Decimal) -> int:
         return row.id
 
 
+async def upi_find_open_request(user_id: int) -> dict | None:
+    """Newest non-closed UPI request of this user (restart/FSM recovery)."""
+    from bot.database.methods.read import _fetch_one_dict
+    return await _fetch_one_dict(
+        UpiRequest,
+        UpiRequest.user_id == user_id,
+        UpiRequest.status.in_(("pending", "awaiting_screenshot", "verifying")),
+    )
+
+
 async def upi_set_utr(request_id: int, utr: str) -> None:
     async with Database().session() as s:
         row = (await s.execute(select(UpiRequest).where(UpiRequest.id == request_id))).scalars().first()

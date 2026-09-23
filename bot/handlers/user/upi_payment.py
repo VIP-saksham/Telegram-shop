@@ -33,6 +33,7 @@ from bot.database.methods import (
     upi_create_request, upi_set_utr, upi_set_verifying, upi_get_request,
     upi_approve, upi_deny, process_payment_with_referral, create_pending_payment,
 )
+from bot.database.methods.create import upi_find_open_request
 from bot.database.methods.audit import log_audit
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.methods.read import invalidate_user_cache
@@ -161,8 +162,12 @@ async def upi_utr(message: Message, state: FSMContext):
         return
 
     await upi_set_utr(req_id, utr)
-    # NOTE: state is intentionally NOT cleared here — upi_req / upi_utr are
-    # still needed by the screenshot step; it clears after the photo arrives.
+    # Keep the UTR in FSM too — the screenshot step reads it from state, and a
+    # bot restart wipes FSM while the DB row survives (fallback lookup).
+    await state.update_data(upi_utr=utr)
+    # Jump straight into the screenshot state so a photo sent WITHOUT touching
+    # the button is still accepted (most users just send it right away).
+    await state.set_state(BalanceStates.waiting_screenshot)
     await message.answer(
         localize("upi.screenshot_prompt"),
         reply_markup=_screenshot_kb(),
@@ -173,13 +178,19 @@ async def upi_utr(message: Message, state: FSMContext):
 async def upi_ask_ss(call: CallbackQuery, state: FSMContext):
     """Prompt for the payment screenshot (green button after the UTR)."""
     data = await state.get_data()
-    if not data.get("upi_req") or not data.get("upi_utr"):
+    req_id = data.get("upi_req")
+    utr = data.get("upi_utr")
+    # FSM can be empty after a bot restart — fall back to the DB request row.
+    if not req_id:
+        req = await upi_find_open_request(call.from_user.id)
+        if not req:
+            await call.answer(localize("payments.session_expired"), show_alert=True)
+            return
+        req_id, utr = req["id"], req.get("utr") or ""
+        await state.update_data(upi_req=req_id, upi_utr=utr, amount=req["amount"])
+    if not utr:
         await call.answer(localize("payments.session_expired"), show_alert=True)
         return
-    await message_state_ask_ss(call, state)
-
-
-async def message_state_ask_ss(call: CallbackQuery, state: FSMContext):
     await call.message.answer(localize("upi.screenshot_prompt"), reply_markup=back("replenish_balance"))
     await state.set_state(BalanceStates.waiting_screenshot)
     await call.answer()
@@ -193,9 +204,16 @@ async def upi_screenshot(message: Message, state: FSMContext):
     amount = data.get("amount")
     utr = data.get("upi_utr") or ""
     if not req_id:
-        await state.clear()
-        await message.answer(localize("payments.session_expired"), reply_markup=back("profile"))
-        return
+        # FSM lost (bot restart / stale session) — recover from the newest
+        # open UPI request of this user so the screenshot is never dropped.
+        req = await upi_find_open_request(message.from_user.id)
+        if not req:
+            await state.clear()
+            await message.answer(localize("payments.session_expired"), reply_markup=back("profile"))
+            return
+        req_id, amount = req["id"], req["amount"]
+        utr = req.get("utr") or ""
+        await state.update_data(upi_req=req_id, upi_utr=utr, amount=amount)
 
     room = EnvKeys.PAYMENT_LOG_GROUP_ID or EnvKeys.LOG_GROUP_ID
     if not room:
@@ -272,7 +290,8 @@ async def upi_verify(call: CallbackQuery, state: FSMContext):
         await call.answer(localize("upi.review.already_done"), show_alert=True)
         return
 
-    # Credit through the standard idempotent path so Payments keeps a record.
+    # Credit through the standard idempotent path (it creates/updates the
+    # Payments row itself) so Payments stays in sync with the UPI request.
     success, code = await process_payment_with_referral(
         user_id=req["user_id"],
         amount=Decimal(str(req["amount"])),
