@@ -5,3 +5,5 @@ class BalanceStates(StatesGroup):
     """FSM states for the balance top-up flow."""
     waiting_amount = State()
     waiting_payment = State()
+    waiting_utr = State()
+    waiting_screenshot = State()

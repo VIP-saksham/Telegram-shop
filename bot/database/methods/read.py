@@ -4,14 +4,34 @@ from functools import wraps
 from types import SimpleNamespace
 from typing import Optional, Dict, TypeVar, Callable, Any, Coroutine
 
-from sqlalchemy import func, exists, select, inspect as sa_inspect
+import datetime
+
+from sqlalchemy import func, exists, select, delete as sa_delete, inspect as sa_inspect, desc as sa_desc
 
 from bot.database.models import Database, User, ItemValues, Goods, Categories, Role, BoughtGoods, \
     Operations, ReferralEarnings, Permission
-from bot.database.models.main import PromoCodes, PromoCodeUsages, CartItems, Reviews, StockSubscriptions
+from bot.database.models.main import (
+    PromoCodes, PromoCodeUsages, CartItems, Reviews, StockSubscriptions,
+    ForceChannel,
+)
 from bot.misc.caching import get_cache_manager, single_flight
 
 F = TypeVar('F', bound=Callable[..., Coroutine[Any, Any, Any]])
+
+# Users registered before this moment are grandfathered past the captcha gate
+# (unix timestamp). Bumped whenever the captcha flow ships.
+CAPTCHA_SINCE = float(__import__("calendar").timegm((2026, 10, 1, 0, 0, 0)))  # enforcement begins Oct 1
+
+
+def _utc_ts(dt) -> float:
+    """Unix timestamp of a datetime, treating naive values as UTC.
+
+    SQLite returns naive datetimes; calling .timestamp() on them applies the
+    local offset, which shifts comparisons by hours on any non-UTC host.
+    """
+    if dt.tzinfo is not None:
+        return dt.timestamp()
+    return dt.replace(tzinfo=datetime.timezone.utc).timestamp()
 
 
 def async_cached(ttl: int = 300, key_prefix: str = "", cache_empty: bool = True) -> Callable[[F], F]:
@@ -73,6 +93,99 @@ async def _fetch_one_dict(model, *whereclauses) -> dict | None:
 async def check_user(telegram_id: int | str) -> Optional[dict]:
     """Return user by Telegram ID or None if not found."""
     return await _fetch_one_dict(User, User.telegram_id == telegram_id)
+
+
+# --- Force-join channels & captcha gate -------------------------------------
+
+async def get_force_channels(active_only: bool = True) -> list[dict]:
+    """All configured join-gate channels, id-ordered."""
+    async with Database().session() as s:
+        q = select(ForceChannel)
+        if active_only:
+            q = q.where(ForceChannel.is_active.is_(True))
+        q = q.order_by(ForceChannel.id)
+        rows = (await s.execute(q)).scalars().all()
+        return [
+            {"id": r.id, "chat_id": r.chat_id, "username": r.username,
+             "title": r.title, "is_active": r.is_active}
+            for r in rows
+        ]
+
+
+async def remove_force_channel(chat_id: str) -> bool:
+    """Delete a gate channel by chat_id; True when a row was removed."""
+    from bot.database import Database as _DB
+    async with _DB().session() as s:
+        result = await s.execute(sa_delete(ForceChannel).where(ForceChannel.chat_id == chat_id))
+        return (result.rowcount or 0) > 0
+
+
+async def set_force_channel_active(chat_id: str, is_active: bool) -> bool:
+    async with Database().session() as s:
+        row = (await s.execute(
+            select(ForceChannel).where(ForceChannel.chat_id == chat_id)
+        )).scalars().first()
+        if not row:
+            return False
+        row.is_active = is_active
+        return True
+
+
+async def get_captcha_passed(user_id: int) -> bool:
+    """Whether the user already solved the entry captcha.
+
+    Users registered before captcha enforcement are grandfathered regardless
+    of the flag; only fresh signups (typically referrals) must solve it.
+    """
+    row = await check_user(user_id)
+    if not row:
+        return False
+    if row.get("captcha_passed"):
+        return True
+    created = row.get("registration_date")
+    try:
+        return _utc_ts(created) < CAPTCHA_SINCE
+    except (TypeError, AttributeError):
+        return True
+
+
+async def mark_captcha_passed(user_id: int) -> None:
+    """Persist a solved captcha so it never asks twice."""
+    async with Database().session() as s:
+        row = (await s.execute(
+            select(User).where(User.telegram_id == user_id)
+        )).scalars().first()
+        if row:
+            row.captcha_passed = True
+
+
+async def count_referrals_since(user_id: int, since_ts: float) -> int:
+    """Referrals of `user_id` registered after `since_ts` (verified count)."""
+    async with Database().session() as s:
+        q = select(func.count()).select_from(User).where(
+            User.referral_id == user_id,
+            User.registration_date >= datetime.datetime.fromtimestamp(since_ts, tz=datetime.timezone.utc),
+        )
+        return (await s.execute(q)).scalar() or 0
+
+
+async def top_referrers(limit: int = 10) -> list[dict]:
+    """Users with the most referrals (for the leaderboard)."""
+    async with Database().session() as s:
+        counts = (
+            select(User.referral_id.label("rid"), func.count().label("cnt"))
+            .where(User.referral_id.isnot(None))
+            .group_by(User.referral_id)
+            .order_by(sa_desc("cnt"))
+            .limit(limit)
+            .subquery()
+        )
+        rows = (await s.execute(
+            select(counts.c.rid, counts.c.cnt, User.balance)
+            .join(User, User.telegram_id == counts.c.rid)
+            .order_by(sa_desc(counts.c.cnt))
+        )).all()
+        return [{"user_id": r[0], "count": r[1], "balance": r[2]} for r in rows]
 
 
 async def check_role(telegram_id: int) -> int:

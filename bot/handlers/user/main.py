@@ -16,6 +16,7 @@ from bot.database.methods import (
 from bot.database.methods.read import get_cart_count, invalidate_user_cache
 from bot.database.methods.lazy_queries import query_user_operations_history
 from bot.handlers.other import check_sub_channel, _parse_channel_username
+from bot.handlers.user.entry_gate import run_gate
 from bot.keyboards import main_menu, back, profile_keyboard, check_sub
 from bot.misc import EnvKeys
 from bot.ui import banner, quote
@@ -162,13 +163,10 @@ async def start(message: Message, state: FSMContext):
 
     channel_username = _parse_channel_username()
 
-    # Optional subscription check. A failed check (None) does not block entry.
-    if channel_username:
-        subscribed = await _is_subscribed(message.bot, channel_username, user_id)
-        if subscribed is False:
-            await message.answer(localize("subscribe.prompt"), reply_markup=check_sub(channel_username))
-            await _delete_quietly(message)
-            return
+    # Entry gate: force-join channels -> captcha (new users) -> menu.
+    if not await run_gate(message, state):
+        await _delete_quietly(message)
+        return
 
     markup = main_menu(role=role_data, channel=channel_username, helper=EnvKeys.HELPER_ID)
 
@@ -192,6 +190,11 @@ async def back_to_menu_callback_handler(call: CallbackQuery, state: FSMContext):
 
     channel_username = _parse_channel_username()
 
+    # Menu returns pass the gate too: a user who left a force-join channel is
+    # stopped here again, and the captcha only fires for still-unverified users.
+    if not await run_gate(call, state):
+        return
+
     markup = main_menu(role=role, channel=channel_username, helper=EnvKeys.HELPER_ID)
     bot_name = await _bot_display_name(call.bot)
     text = f"{banner(bot_name, localize('menu.hello', name=_esc(call.from_user.first_name or '')))}\n\n" \
@@ -203,14 +206,67 @@ async def back_to_menu_callback_handler(call: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "rules")
 async def rules_callback_handler(call: CallbackQuery, state: FSMContext):
     """
-    Show rules text if provided in ENV.
+    Show the Bot Policy (env RULES wins when the admin set custom text).
     """
     rules_data = EnvKeys.RULES
-    if rules_data:
-        await call.message.edit_text(rules_data, reply_markup=back("back_to_menu"))
-    else:
-        await call.answer(localize("rules.not_set"))
+    body = rules_data or localize("policy.body")
+    text = f"{banner(localize('policy.title'))}\n\n{body}"
+    await call.message.edit_text(text, reply_markup=back("back_to_menu"), parse_mode="HTML")
     await state.clear()
+
+
+@router.callback_query(F.data == "help_menu")
+async def help_menu_handler(call: CallbackQuery, state: FSMContext):
+    """Help section: quick how-to + jumps."""
+    text = "\n".join([
+        banner(localize("help.title")),
+        "",
+        localize("help.body"),
+        "",
+        quote(localize("help.tip")),
+    ])
+    from bot.keyboards import help_keyboard
+    await call.message.edit_text(text, reply_markup=help_keyboard())
+    await state.clear()
+
+
+@router.callback_query(F.data == "change_language")
+async def change_language_handler(call: CallbackQuery, state: FSMContext):
+    """Language picker."""
+    from bot.keyboards import language_keyboard
+    from bot.i18n.main import get_locale
+    text = f"{banner(localize('language.title'))}"
+    await call.message.edit_text(text, reply_markup=language_keyboard(get_locale()))
+    await state.clear()
+
+
+@router.callback_query(F.data.startswith("set_lang:"))
+async def set_language_handler(call: CallbackQuery, state: FSMContext):
+    """Store the language choice per chat and re-open the menu in it.
+
+    Locale lives in Redis-backed FSM storage keyed by chat, so it survives
+    restarts with Redis and falls back to BOT_LOCALE without it.
+    """
+    code = call.data.split(":", 1)[1]
+    from bot.i18n.strings import TRANSLATIONS
+    if code not in TRANSLATIONS:
+        await call.answer(localize("errors.invalid_data"), show_alert=True)
+        return
+
+    await state.update_data(locale=code)
+    from bot.i18n import main as i18n_main
+    i18n_main.set_chat_locale(call.message.chat.id, code)
+    # Re-bind for the rest of this update's context (menu render below).
+
+    names = {"en": "English", "ru": "Русский", "hi": "हिन्दी"}
+    await call.answer(localize("language.set", lang=names.get(code, code)))
+
+    # Re-open the menu in the chosen language.
+    user_id = call.from_user.id
+    await _ensure_user(user_id)
+    role = await check_role_cached(user_id) or 0
+    from bot.handlers.user.entry_gate import _open_menu
+    await _open_menu(call, state)
 
 
 @router.callback_query(F.data == "profile")

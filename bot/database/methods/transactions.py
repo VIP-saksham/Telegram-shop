@@ -207,6 +207,66 @@ async def buy_item_transaction(telegram_id: int, item_name: str, promo_code: str
     return False, "transaction_error", None
 
 
+async def credit_referral_reward(user_id: int) -> bool:
+    """Credit the referrer's fixed reward once, when the invitee passes the captcha.
+
+    Idempotent by design: a RewardsPaid marker row in ReferralEarnings
+    (referral_id = -<user_id> sentinel) means the reward already went out.
+    """
+    sentinel = -abs(user_id)
+    try:
+        async with Database().session() as s:
+            user = (await s.execute(
+                select(User).where(User.telegram_id == user_id)
+            )).scalars().first()
+            if not user or not user.referral_id or user.referral_id == user_id:
+                return False
+
+            already = (await s.execute(
+                select(exists().where(
+                    ReferralEarnings.referrer_id == user.referral_id,
+                    ReferralEarnings.referral_id == sentinel,
+                ))
+            )).scalar()
+            if already:
+                return False
+
+            reward = Decimal(str(EnvKeys.REFERRAL_REWARD)).quantize(Decimal("0.01"))
+            if reward <= 0:
+                return False
+
+            referrer = (await s.execute(
+                select(User).where(User.telegram_id == user.referral_id).with_for_update()
+            )).scalars().one_or_none()
+            if not referrer:
+                return False
+
+            referrer.balance += reward
+            s.add(ReferralEarnings(
+                referrer_id=user.referral_id,
+                referral_id=sentinel,   # sentinel marks this row as a signup reward
+                amount=reward,
+                original_amount=reward,
+            ))
+            s.add(Operations(
+                user_id=user.referral_id,
+                operation_value=reward,
+                operation_time=datetime.now(timezone.utc),
+            ))
+            await log_audit(
+                "referral_signup_reward",
+                user_id=user.referral_id,
+                resource_type="User",
+                resource_id=str(user_id),
+                details=f"reward={reward}",
+                session=s,
+            )
+        safe_create_task(invalidate_user_cache(user.referral_id))
+        return True
+    except Exception:  # noqa: BLE001 — reward failures must not break the gate
+        return False
+
+
 async def process_payment_with_referral(
         user_id: int,
         amount: Decimal,

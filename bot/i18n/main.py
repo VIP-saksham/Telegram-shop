@@ -19,12 +19,34 @@ def get_locale() -> str:
     return loc if loc in TRANSLATIONS else DEFAULT_LOCALE
 
 
+# Per-chat locale overrides set from the Language menu. An asyncio task carries
+# a context, so a value bound inside a handler is visible to every localize()
+# call that handler (and its helpers) make while rendering that update.
+import contextvars
+
+_current_locale: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_locale", default=None,
+)
+
+
+def set_chat_locale(chat_id: int, locale: str) -> None:
+    """Bind this update's language (validated by the caller).
+
+    Bound on the context var, not a chat-id dict: localize() has no chat id
+    parameter, and the context var flows through the handler's task only —
+    no cross-chat bleed, no unbounded memory.
+    """
+    if locale in TRANSLATIONS:
+        _current_locale.set(locale)
+
+
 def localize(key: str, /, **kwargs: Any) -> str:
     """
     Get translation by key.
-    Fallback: current locale -> DEFAULT_LOCALE -> the key itself.
+    Fallback: current-locale (if the update set one) -> default locale (env)
+    -> DEFAULT_LOCALE -> the key itself.
     """
-    loc = get_locale()
+    loc = _current_locale.get() or get_locale()
 
     text = TRANSLATIONS.get(loc, {}).get(key)
     if text is None:

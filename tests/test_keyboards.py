@@ -219,7 +219,8 @@ class TestReferralSystemKeyboard:
         )
         assert ("view_referrals" in cbs) is has_referrals
         assert ("view_all_earnings" in cbs) is has_earnings
-        assert "profile" in cbs  # back button is always there
+        assert "back_to_menu" in cbs  # back button is always there
+        assert "ref_share" in cbs and "ref_copy" in cbs  # share/copy always offered
 
 
 class TestGetPaymentChoice:

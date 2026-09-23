@@ -57,6 +57,13 @@ class EnvKeys(ABC):
     MIN_AMOUNT: Final = int(_get_optional("MIN_AMOUNT", "20"))
     MAX_AMOUNT: Final = int(_get_optional("MAX_AMOUNT", "10000"))
 
+    # UPI (INR) manual payment — dynamic QR + UTR + screenshot verification.
+    # Empty UPI_ID hides the UPI option in the payment menu.
+    UPI_ID: Final = _get_optional("UPI_ID", "")
+    UPI_NAME: Final = _get_optional("UPI_NAME", "Shop")
+    # Fixed reward credited to the referrer when a new user passes the captcha.
+    REFERRAL_REWARD: Final = float(_get_optional("REFERRAL_REWARD", "0.5"))
+
     # Links / UI
     CHANNEL_URL: Final = _get_optional("CHANNEL_URL", "")
     CHANNEL_ID: Final = _get_optional("CHANNEL_ID", "")

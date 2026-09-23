@@ -133,7 +133,9 @@ class TestRulesHandler:
             env.RULES = ""
             await rules_callback_handler(call, fsm_context)
 
-        call.answer.assert_called_once()
+        # With no custom RULES the built-in policy body is shown instead.
+        text = call.message.edit_text.call_args[0][0]
+        assert text.strip()
 
 
 class TestMainMenuReceivesPermissionBitmask:

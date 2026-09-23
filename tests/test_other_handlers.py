@@ -71,17 +71,19 @@ class TestCheckSubChannel:
 
 class TestAnyPaymentMethodEnabled:
 
-    @pytest.mark.parametrize("crypto,stars,provider,expected", [
-        ("token", 0.91, "provider", True),  # all three configured
-        ("", 0, "", False),                 # none configured
-        ("token", 0, "", True),             # crypto only
-        ("", 0.91, "", True),               # stars only
+    @pytest.mark.parametrize("crypto,stars,provider,upi,expected", [
+        ("token", 0.91, "provider", "", True),   # all classic methods configured
+        ("", 0, "", "", False),                  # none configured
+        ("token", 0, "", "", True),              # crypto only
+        ("", 0.91, "", "", True),                # stars only
+        ("", 0, "", "name@upi", True),           # UPI only
     ])
-    def test_enabled(self, crypto, stars, provider, expected):
+    def test_enabled(self, crypto, stars, provider, upi, expected):
         with patch('bot.handlers.other.EnvKeys') as env:
             env.CRYPTO_PAY_TOKEN = crypto
             env.STARS_PER_VALUE = stars
             env.TELEGRAM_PROVIDER_TOKEN = provider
+            env.UPI_ID = upi
             assert _any_payment_method_enabled() is expected
 
 

@@ -15,17 +15,39 @@ def header(title: str, subtitle: str = "") -> str:
     return "\n".join(lines)
 
 def main_menu(role: int, channel: str | None = None, helper: str | None = None) -> InlineKeyboardMarkup:
-    """
-    Main menu — EagleX style: green shop CTA, blue navigation, red admin.
+    """Home layout: green Browse CTA, 2-col utility grid, full-width Language.
+
+    ┌────────────────────┐
+    │   Browse Products  │  green
+    ├─────────┬──────────┤
+    │ Wallet  │ History  │  blue
+    ├─────────┼──────────┤
+    │ Invite  │ Leader   │  blue
+    ├─────────┼──────────┤
+    │ Help    │ Policy   │  blue
+    ├─────────┴──────────┤
+    │      Language      │  blue
+    └────────────────────┘
     """
     kb = InlineKeyboardBuilder()
     kb.row(cbtn(localize("btn.shop"), "shop", color=SUCCESS, icon="shop"))
-    kb.row(cbtn(localize("btn.profile"), "profile", color=PRIMARY, icon="wallet"))
-    kb.row(cbtn(localize("btn.rules"), "rules", color=PRIMARY, icon="policy"))
-    if helper:
-        kb.row(cbtn(localize("btn.support"), url=f"tg://user?id={helper}", color=PRIMARY, icon="help"))
+    kb.row(
+        cbtn(localize("btn.wallet"), "profile", color=PRIMARY, icon="wallet"),
+        cbtn(localize("btn.history"), "operation_history", color=PRIMARY, icon="history"),
+    )
+    kb.row(
+        cbtn(localize("btn.invite"), "referral_system", color=PRIMARY, icon="invite"),
+        cbtn(localize("btn.leaderboard"), "ref_leaderboard", color=PRIMARY, icon="leaderboard"),
+    )
+    kb.row(
+        cbtn(localize("btn.help"), "help_menu", color=PRIMARY, icon="help"),
+        cbtn(localize("btn.rules"), "rules", color=PRIMARY, icon="policy"),
+    )
+    kb.row(cbtn(localize("btn.language"), "change_language", color=PRIMARY, icon="language"))
     if channel:
         kb.row(cbtn(localize("btn.channel"), url=f"https://t.me/{channel.lstrip('@')}", color=PRIMARY, icon="share"))
+    if helper:
+        kb.row(cbtn(localize("btn.support"), url=f"tg://user?id={helper}", color=PRIMARY, icon="help"))
     if Permission.has_any_admin_perm(role):
         kb.row(cbtn(localize("btn.admin_menu"), "console", color=DANGER, icon="gear"))
     return kb.as_markup()
@@ -67,6 +89,7 @@ def admin_console_keyboard(maintenance_mode: bool = False, role: int = 127) -> I
     if role & Permission.BROADCAST:
         kb.row(cbtn(localize("admin.menu.broadcast"), "send_message", color=PRIMARY, icon="megaphone"))
     if role & Permission.SETTINGS_MANAGE:
+        kb.row(cbtn(localize("admin.fc.menu"), "force_channels", color=PRIMARY, icon="door"))
         maintenance_key = "admin.menu.maintenance_on" if maintenance_mode else "admin.menu.maintenance_off"
         kb.row(cbtn(localize(maintenance_key), "toggle_maintenance", color=DANGER, icon="gear"))
     kb.row(cbtn(localize("btn.back"), "back_to_menu", color=DANGER, icon="back"))
@@ -225,12 +248,19 @@ def payment_menu(pay_url: str) -> InlineKeyboardMarkup:
 
 def get_payment_choice() -> InlineKeyboardMarkup:
     """
-    Select a payment method.
+    Select a payment method — UPI (INR) first when configured, then Stars,
+    then CryptoPay; Telegram Payments only when a provider token exists.
     """
+    from bot.misc import EnvKeys as _E
     kb = InlineKeyboardBuilder()
-    kb.row(cbtn(localize("btn.pay.crypto"), "pay_cryptopay", color=SUCCESS, icon="usdt"))
-    kb.row(cbtn(localize("btn.pay.stars"), "pay_stars", color=PRIMARY, icon="star"))
-    kb.row(cbtn(localize("btn.pay.tg"), "pay_fiat", color=PRIMARY, icon="copy"))
+    if _E.UPI_ID:
+        kb.row(cbtn(localize("btn.pay.upi"), "pay_upi", color=SUCCESS, icon="usdt"))
+    if _E.STARS_PER_VALUE > 0:
+        kb.row(cbtn(localize("btn.pay.stars"), "pay_stars", color=PRIMARY, icon="star"))
+    if _E.CRYPTO_PAY_TOKEN:
+        kb.row(cbtn(localize("btn.pay.crypto"), "pay_cryptopay", color=PRIMARY, icon="usdt"))
+    if _E.TELEGRAM_PROVIDER_TOKEN:
+        kb.row(cbtn(localize("btn.pay.tg"), "pay_fiat", color=PRIMARY, icon="copy"))
     kb.row(cbtn(localize("btn.back"), "replenish_balance", color=PRIMARY, icon="back"))
     return kb.as_markup()
 
@@ -267,13 +297,55 @@ def rating_keyboard() -> InlineKeyboardMarkup:
 
 
 def referral_system_keyboard(has_referrals: bool = False, has_earnings: bool = False) -> InlineKeyboardMarkup:
-    """
-    Referral system keyboard with additional buttons.
-    """
+    """Invite & Earn page: Share link, Copy link, (lists), Back."""
     kb = InlineKeyboardBuilder()
+    kb.row(
+        cbtn(localize("btn.share_link"), "ref_share", color=SUCCESS, icon="share"),
+        cbtn(localize("btn.copy_link"), "ref_copy", color=PRIMARY, icon="copy"),
+    )
     if has_referrals:
         kb.row(cbtn(localize("btn.view_referrals"), "view_referrals", color=PRIMARY, icon="users"))
     if has_earnings:
         kb.row(cbtn(localize("btn.view_earnings"), "view_all_earnings", color=PRIMARY, icon="usdt"))
-    kb.row(cbtn(localize("btn.back"), "profile", color=PRIMARY, icon="back"))
+    kb.row(cbtn(localize("btn.back"), "back_to_menu", color=PRIMARY, icon="back"))
+    return kb.as_markup()
+
+
+def help_keyboard() -> InlineKeyboardMarkup:
+    """Help section: quick jumps + support + back."""
+    kb = InlineKeyboardBuilder()
+    kb.row(cbtn(localize("btn.help.how_buy"), "shop", color=PRIMARY, icon="shop"))
+    kb.row(cbtn(localize("btn.help.topup"), "replenish_balance", color=PRIMARY, icon="usdt"))
+    kb.row(cbtn(localize("btn.help.policy"), "rules", color=PRIMARY, icon="policy"))
+    kb.row(cbtn(localize("btn.back"), "back_to_menu", color=PRIMARY, icon="back"))
+    return kb.as_markup()
+
+
+def language_keyboard(current: str = "en") -> InlineKeyboardMarkup:
+    """Locale picker with a check on the active language."""
+    from bot.i18n.strings import TRANSLATIONS
+    names = {"en": "English", "ru": "Русский", "hi": "हिन्दी"}
+    kb = InlineKeyboardBuilder()
+    for code in TRANSLATIONS.keys():
+        label = names.get(code, code)
+        if code == current:
+            label = f"✓ {label}"
+        kb.row(cbtn(label, f"set_lang:{code}", color=PRIMARY, icon="language"))
+    kb.row(cbtn(localize("btn.back"), "back_to_menu", color=PRIMARY, icon="back"))
+    return kb.as_markup()
+
+
+def force_channels_admin_kb(channels: list[dict]) -> InlineKeyboardMarkup:
+    """Admin: list of gate channels with toggle/remove + add + back."""
+    kb = InlineKeyboardBuilder()
+    for ch in channels:
+        label = (ch.get("title") or ch.get("username") or ch["chat_id"])
+        state_icon = "minus" if ch["is_active"] else "plus"
+        kb.row(
+            cbtn(label, "dummy_button", color=PRIMARY, icon="share"),
+            cbtn("⏻", f"fc_toggle:{ch['chat_id']}", color=PRIMARY, icon=state_icon),
+            cbtn("✕", f"fc_del:{ch['chat_id']}", color=DANGER, icon="trash"),
+        )
+    kb.row(cbtn(localize("admin.fc.add"), "fc_add", color=SUCCESS, icon="plus"))
+    kb.row(cbtn(localize("btn.back"), "console", color=PRIMARY, icon="back"))
     return kb.as_markup()

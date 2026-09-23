@@ -27,6 +27,8 @@ cryptography==44.0.3
 
 # Utils
 python-dateutil==2.8.2
+qrcode==8.2
+pillow==11.3.0
 
 # Testing
 pytest==8.4.2

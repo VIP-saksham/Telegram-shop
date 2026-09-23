@@ -12,6 +12,7 @@ from bot.handlers.other import get_bot_info, display_name
 from bot.keyboards import back, referral_system_keyboard, lazy_paginated_keyboard
 from bot.misc import EnvKeys, LazyPaginator
 from bot.i18n import localize, esc
+from bot.ui import cbtn, PRIMARY, SUCCESS
 
 router = Router()
 
@@ -19,36 +20,84 @@ router = Router()
 @router.callback_query(F.data == "referral_system")
 async def referral_callback_handler(call: CallbackQuery, state: FSMContext):
     """
-    Show referral info, personal invite link, and additional buttons.
+    Invite & Earn page: reward, referral count, total earned, personal link.
     """
+    from bot.ui import banner, quote, kv
+
     user_id = call.from_user.id
     referrals_count = await check_user_referrals(user_id)
-    referral_percent = EnvKeys.REFERRAL_PERCENT
     bot_username = await get_bot_info(call)
-
     earnings_stats = await get_referral_earnings_stats(user_id)
 
     has_referrals = referrals_count > 0
     has_earnings = earnings_stats['total_earnings_count'] > 0
 
-    text = (
-        f"{localize('referral.title')}\n"
-        f"{localize('referral.link', bot_username=bot_username, user_id=user_id)}\n"
-        f"{localize('referral.count', count=referrals_count)}\n"
-        f"{localize('referral.description', percent=referral_percent)}"
-    )
-
-    if has_earnings:
-        text += "\n\n" + localize('referrals.stats.template',
-                                  active_count=earnings_stats['active_referrals_count'],
-                                  total_earned=int(earnings_stats['total_amount']),
-                                  total_original=int(earnings_stats['total_original_amount']),
-                                  earnings_count=earnings_stats['total_earnings_count'],
-                                  currency=EnvKeys.PAY_CURRENCY
-                                  )
+    reward = EnvKeys.REFERRAL_REWARD
+    text = "\n".join([
+        banner(localize("invite.title")),
+        "",
+        localize("invite.desc"),
+        "",
+        kv(localize("invite.reward_key"), f"Rs.{reward}"),
+        kv(localize("invite.count_key"), str(referrals_count)),
+        kv(localize("invite.earned_key"), f"Rs.{earnings_stats['total_amount']}"),
+        "",
+        f"{localize('invite.link_label')}\n{localize('invite.link', bot_username=bot_username, user_id=user_id)}",
+        "",
+        quote(localize("invite.share_hint")),
+    ])
 
     markup = referral_system_keyboard(has_referrals, has_earnings)
-    await call.message.edit_text(text, reply_markup=markup)
+    await call.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
+    await state.clear()
+
+
+@router.callback_query(F.data == "ref_share")
+async def ref_share_handler(call: CallbackQuery, state: FSMContext):
+    """Open Telegram's native share prompt with the invite link."""
+    user_id = call.from_user.id
+    bot_username = await get_bot_info(call)
+    link = f"https://t.me/{bot_username}?start={user_id}"
+    url = f"https://t.me/share/url?url={link}&text={localize('invite.share_text')}"
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    kb = InlineKeyboardBuilder()
+    kb.row(cbtn(localize("btn.share_link"), url=url, color=SUCCESS, icon="share"))
+    kb.row(cbtn(localize("btn.back"), "referral_system", color=PRIMARY, icon="back"))
+    await call.message.edit_text(localize("invite.share_hint"), reply_markup=kb.as_markup())
+    await state.clear()
+
+
+@router.callback_query(F.data == "ref_copy")
+async def ref_copy_handler(call: CallbackQuery, state: FSMContext):
+    """Show the link alone so the client's copy button is one tap away."""
+    user_id = call.from_user.id
+    bot_username = await get_bot_info(call)
+    text = f"{localize('invite.link_label')}\n{localize('invite.link', bot_username=bot_username, user_id=user_id)}"
+    await call.message.edit_text(text, reply_markup=back("referral_system"), parse_mode="HTML")
+    await state.clear()
+
+
+@router.callback_query(F.data == "ref_leaderboard")
+async def ref_leaderboard_handler(call: CallbackQuery, state: FSMContext):
+    """Top referrers with names, medal places for the podium."""
+    from bot.database.methods.read import top_referrers
+    from bot.ui import banner, quote
+
+    rows = await top_referrers(limit=10)
+    if not rows:
+        text = f"{banner(localize('leaderboard.title'))}\n\n{quote(localize('leaderboard.empty'))}"
+        await call.message.edit_text(text, reply_markup=back("back_to_menu"))
+        await state.clear()
+        return
+
+    medals = {0: "🥇", 1: "🥈", 2: "🥉"}
+    lines = [banner(localize("leaderboard.title")), ""]
+    for i, row in enumerate(rows):
+        name = esc(await display_name(call.message.bot, row["user_id"]))
+        place = medals.get(i, f"{i + 1}.")
+        lines.append(localize("leaderboard.row", place=place, name=name, count=row["count"]))
+
+    await call.message.edit_text("\n".join(lines), reply_markup=back("back_to_menu"))
     await state.clear()
 
 

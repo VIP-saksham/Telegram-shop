@@ -107,6 +107,9 @@ class User(Database.BASE):
         BigInteger, ForeignKey('users.telegram_id', ondelete="SET NULL"), nullable=True, index=True)
     registration_date: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now())
+    # Entry-gate captcha result. NULL/False = not solved; users registered
+    # before the captcha shipped are grandfathered regardless of this flag.
+    captcha_passed: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     is_blocked: Mapped[Optional[bool]] = mapped_column(Boolean, default=False, index=True)
     user_operations: Mapped[list["Operations"]] = relationship(
         "Operations", back_populates="user_telegram_id", lazy='raise')
@@ -423,6 +426,53 @@ class StockSubscriptions(Database.BASE):
 
     def __str__(self):
         return f"sub u={self.user_id} item={self.item_id}"
+
+
+class ForceChannel(Database.BASE):
+    """A channel/group the user must join before the bot opens.
+
+    `chat_id` is the numeric Telegram chat id (recommended, works for private
+    channels); `username` (without @) is a human-readable fallback used for
+    building the join link when chat_id resolution is unavailable.
+    `is_active=False` keeps the record but skips it during the gate check.
+    """
+    __tablename__ = 'force_channels'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    chat_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    title: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    def __str__(self):
+        return self.username or self.chat_id
+
+
+class UpiRequest(Database.BASE):
+    """One manual UPI top-up attempt (amount -> QR -> UTR -> screenshot).
+
+    Statuses: pending (awaiting UTR), awaiting_screenshot, verifying
+    (screenshot sent to the log room), approved, denied.
+    """
+    __tablename__ = 'upi_requests'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey('users.telegram_id', ondelete='CASCADE'), nullable=False, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    utr: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending", index=True)
+    verify_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    __table_args__ = (
+        Index('ix_upi_requests_status_created', 'status', 'created_at'),
+    )
+
+    def __str__(self):
+        return f"upi#{self.id} u={self.user_id} {self.amount} {self.status}"
 
 
 async def register_models():

@@ -5,7 +5,10 @@ from sqlalchemy import select, exists, func as sa_func, insert as sa_insert
 from sqlalchemy.exc import IntegrityError
 
 from bot.database.models import User, ItemValues, Goods, Categories, Payments, Role
-from bot.database.models.main import PromoCodes, CartItems, Reviews, StockSubscriptions, promo_scope_for
+from bot.database.models.main import (
+    PromoCodes, CartItems, Reviews, StockSubscriptions, promo_scope_for,
+    ForceChannel, UpiRequest,
+)
 from bot.database import Database
 from bot.database.methods.cache_utils import safe_create_task
 from bot.database.methods.read import invalidate_stats_cache, invalidate_item_cache, invalidate_category_cache
@@ -13,6 +16,69 @@ from bot.database.methods.read import invalidate_stats_cache, invalidate_item_ca
 # Cart limits: distinct positions per cart, and units of any one position.
 CART_MAX_ITEMS = 10
 CART_MAX_QTY_PER_ITEM = 99
+
+
+# --- Force-join channels -----------------------------------------------------
+
+async def add_force_channel(chat_id: str, username: str | None = None, title: str | None = None) -> bool:
+    """Register a channel/group for the join gate. False when it already exists."""
+    async with Database().session() as s:
+        exists_q = await s.execute(select(exists().where(ForceChannel.chat_id == chat_id)))
+        if exists_q.scalar():
+            return False
+        s.add(ForceChannel(chat_id=chat_id, username=username, title=title, is_active=True))
+    return True
+
+
+async def upi_create_request(user_id: int, amount: Decimal) -> int:
+    """Open a UPI top-up request; returns its id (status=pending)."""
+    async with Database().session() as s:
+        row = UpiRequest(user_id=user_id, amount=amount, status="pending")
+        s.add(row)
+        await s.flush()
+        return row.id
+
+
+async def upi_set_utr(request_id: int, utr: str) -> None:
+    async with Database().session() as s:
+        row = (await s.execute(select(UpiRequest).where(UpiRequest.id == request_id))).scalars().first()
+        if row:
+            row.utr = utr
+            row.status = "awaiting_screenshot"
+
+
+async def upi_set_verifying(request_id: int, verify_message_id: int | None = None) -> None:
+    async with Database().session() as s:
+        row = (await s.execute(select(UpiRequest).where(UpiRequest.id == request_id))).scalars().first()
+        if row:
+            row.status = "verifying"
+            if verify_message_id:
+                row.verify_message_id = verify_message_id
+
+
+async def upi_get_request(request_id: int) -> dict | None:
+    from bot.database.methods.read import _fetch_one_dict
+    return await _fetch_one_dict(UpiRequest, UpiRequest.id == request_id)
+
+
+async def upi_approve(request_id: int) -> dict | None:
+    """Mark approved; returns the request row (for crediting) or None."""
+    async with Database().session() as s:
+        row = (await s.execute(select(UpiRequest).where(UpiRequest.id == request_id))).scalars().first()
+        if not row or row.status not in ("verifying", "awaiting_screenshot", "pending"):
+            return None
+        row.status = "approved"
+        return {
+            "id": row.id, "user_id": row.user_id,
+            "amount": row.amount, "utr": row.utr,
+        }
+
+
+async def upi_deny(request_id: int) -> None:
+    async with Database().session() as s:
+        row = (await s.execute(select(UpiRequest).where(UpiRequest.id == request_id))).scalars().first()
+        if row:
+            row.status = "denied"
 
 
 async def create_user(telegram_id: int, registration_date: datetime, referral_id: int | None, role: int = 1) -> None:
