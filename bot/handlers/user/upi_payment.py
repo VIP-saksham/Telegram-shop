@@ -89,29 +89,51 @@ async def upi_start(call: CallbackQuery, state: FSMContext):
         quote(localize("upi.scan_hint")),
     ])
 
-    kb_back = back("replenish_balance")
+    # QR ke niche: green Send UTR + blue Back.
+    kb = _utr_kb()
     try:
-        with_photo = await call.message.answer_photo(
+        sent = await call.message.answer_photo(
             BufferedInputFile(png, filename=f"upi-{amount}.png"),
             caption=caption,
-            reply_markup=None,
+            reply_markup=kb,
         )
         try:
             await call.message.delete()
         except (TelegramBadRequest, TelegramForbiddenError):
             pass
-        await with_photo.edit_reply_markup(reply_markup=kb_back.reply_markup)
+        del sent  # photo stays; buttons are already attached
     except Exception as e:  # noqa: BLE001 — photo send can fail on odd clients
         logger.warning(f"QR send failed: {e}")
-        await call.message.edit_text(caption, reply_markup=kb_back)
+        await call.message.edit_text(caption, reply_markup=kb)
 
-    await call.message.answer(localize("upi.utr_prompt"), reply_markup=None)
+
+def _utr_kb():
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    kb = InlineKeyboardBuilder()
+    kb.row(cbtn(localize("upi.btn.send_utr"), "upi_ask_utr", color=SUCCESS, icon="key"))
+    kb.row(cbtn(localize("btn.back"), "replenish_balance", color=PRIMARY, icon="back"))
+    return kb.as_markup()
+
+
+def _screenshot_kb():
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    kb = InlineKeyboardBuilder()
+    kb.row(cbtn(localize("upi.btn.send_screenshot"), "upi_ask_ss", color=SUCCESS, icon="share"))
+    kb.row(cbtn(localize("btn.back"), "replenish_balance", color=PRIMARY, icon="back"))
+    return kb.as_markup()
+
+
+@router.callback_query(F.data == "upi_ask_utr")
+async def upi_ask_utr(call: CallbackQuery, state: FSMContext):
+    """Prompt for the UTR (green button on the QR card)."""
+    await call.message.answer(localize("upi.utr_prompt"), reply_markup=back("replenish_balance"))
     await state.set_state(BalanceStates.waiting_utr)
+    await call.answer()
 
 
 @router.message(BalanceStates.waiting_utr)
 async def upi_utr(message: Message, state: FSMContext):
-    """Accept the 12-digit UTR reference, then ask for the screenshot."""
+    """Accept the 12-digit UTR, then offer the screenshot button."""
     utr = (message.text or "").strip()
     if not utr:
         return
@@ -132,9 +154,25 @@ async def upi_utr(message: Message, state: FSMContext):
     await state.update_data(upi_utr=utr)
     await message.answer(
         localize("upi.screenshot_prompt"),
-        reply_markup=back("replenish_balance"),
+        reply_markup=_screenshot_kb(),
     )
+    await state.clear()
+
+
+@router.callback_query(F.data == "upi_ask_ss")
+async def upi_ask_ss(call: CallbackQuery, state: FSMContext):
+    """Prompt for the payment screenshot (green button after the UTR)."""
+    data = await state.get_data()
+    if not data.get("upi_req") or not data.get("upi_utr"):
+        await call.answer(localize("payments.session_expired"), show_alert=True)
+        return
+    await message_state_ask_ss(call, state)
+
+
+async def message_state_ask_ss(call: CallbackQuery, state: FSMContext):
+    await call.message.answer(localize("upi.screenshot_prompt"), reply_markup=back("replenish_balance"))
     await state.set_state(BalanceStates.waiting_screenshot)
+    await call.answer()
 
 
 @router.message(BalanceStates.waiting_screenshot, F.photo)

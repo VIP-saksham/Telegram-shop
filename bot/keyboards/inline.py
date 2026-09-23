@@ -173,16 +173,24 @@ def item_info(
         review_count: int = 0, has_purchased: bool = False,
         applied_promo: str = None, reviews_enabled: bool = True,
         out_of_stock: bool = False, subscribed: bool = False,
+        low_balance: bool = False,
 ) -> InlineKeyboardMarkup:
     """
-    Product card — EagleX style: green Buy, blue extras, red Back.
+    Product card — green Buy, blue extras, red Back.
 
     When `out_of_stock`, offers a restock notification toggle instead of
-    leaving the user at a dead end.
+    leaving the user at a dead end. When `low_balance`, a green Top-up
+    shortcut sits next to Buy so the user can fund the purchase right here.
     """
     kb = InlineKeyboardBuilder()
     if not out_of_stock:
-        kb.row(cbtn(localize("btn.buy"), "buy_item", color=SUCCESS, icon="buy"))
+        if low_balance:
+            kb.row(
+                cbtn(localize("btn.buy"), "buy_item", color=PRIMARY, icon="buy"),
+                cbtn(localize("btn.replenish"), "replenish_balance", color=SUCCESS, icon="usdt"),
+            )
+        else:
+            kb.row(cbtn(localize("btn.buy"), "buy_item", color=SUCCESS, icon="buy"))
     kb.row(cbtn(localize("btn.add_to_cart"), "add_to_cart", color=PRIMARY, icon="cart"))
     if applied_promo:
         kb.row(cbtn(localize("btn.remove_promo"), "remove_promo", color=DANGER, icon="minus"))

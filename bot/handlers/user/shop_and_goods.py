@@ -26,6 +26,7 @@ from bot.database.methods.audit import log_audit_bg
 from bot.database.models import Permission
 from bot.keyboards import item_info, back, lazy_paginated_keyboard
 from bot.keyboards.inline import simple_buttons, rating_keyboard
+from bot.ui import cbtn, PRIMARY, SUCCESS, DANGER
 from aiogram.types import InlineKeyboardButton
 from bot.i18n import localize, esc
 from bot.misc import EnvKeys, LazyPaginator, ReviewRequest
@@ -136,12 +137,23 @@ async def _render_item_page(target, state: FSMContext, item_name: str, back_data
     else:
         price_line = localize("shop.item.price", amount=price, currency=EnvKeys.PAY_CURRENCY)
 
+    # Offer a Top-up shortcut on the card when the user cannot afford it.
+    low_balance = False
+    if user_id and not out_of_stock:
+        from bot.database.methods.read import check_user_cached
+        row = await check_user_cached(user_id)
+        try:
+            low_balance = row is not None and Decimal(str(row.get("balance") or 0)) < price
+        except Exception:  # noqa: BLE001 — cosmetic shortcut only
+            low_balance = False
+
     markup = item_info(
         back_data,
         avg_rating=avg_rating, review_count=review_count_val,
         has_purchased=purchased, applied_promo=applied_promo,
         reviews_enabled=reviews_enabled,
         out_of_stock=out_of_stock, subscribed=subscribed,
+        low_balance=low_balance,
     )
 
     text_lines = [
@@ -169,6 +181,8 @@ async def _render_item_page(target, state: FSMContext, item_name: str, back_data
 
 async def _show_categories_page(call: CallbackQuery, state: FSMContext, page: int):
     """Render one page of the category list (shared by the shop entry + paginate handlers)."""
+    from bot.ui import banner, quote
+
     paginator = LazyPaginator(query_categories, per_page=10)
 
     # Pre-fetch page items to build the index map used by the item_callback.
@@ -182,12 +196,13 @@ async def _show_categories_page(call: CallbackQuery, state: FSMContext, page: in
         page=page,
         back_cb="back_to_menu",
         nav_cb_prefix="categories-page_",
-        extra_rows=[[InlineKeyboardButton(
-            text=localize("btn.search"), callback_data="shop_search",
-        )]],
+        extra_rows=[[cbtn(localize("btn.search"), "shop_search", color=PRIMARY, icon="search")]],
     )
 
-    await call.message.edit_text(localize("shop.categories.title"), reply_markup=markup)
+    await call.message.edit_text(
+        f"{banner(localize('shop.categories.title'))}\n\n{quote(localize('shop.pick_category'))}",
+        reply_markup=markup,
+    )
     await state.update_data(
         category_page_items=list(page_items),
         category_page_num=page,
@@ -217,6 +232,7 @@ async def _show_goods_page(call: CallbackQuery, state: FSMContext,
                            category_name: str, cat_page: int, page: int):
     """Render one page of goods inside a category (shared by category-open + paginate)."""
     from bot.database.methods.lazy_queries import query_items_in_category
+    from bot.ui import banner, quote
 
     paginator = LazyPaginator(partial(query_items_in_category, category_name), per_page=10)
 
@@ -232,7 +248,10 @@ async def _show_goods_page(call: CallbackQuery, state: FSMContext,
         nav_cb_prefix="gp_",
     )
 
-    await call.message.edit_text(localize("shop.goods.choose"), reply_markup=markup)
+    await call.message.edit_text(
+        f"{banner(localize('shop.goods.choose', category=esc(category_name)))}\n\n{quote(localize('shop.pick_product'))}",
+        reply_markup=markup,
+    )
     await state.update_data(
         current_category=category_name,
         goods_page_items=list(page_items),
