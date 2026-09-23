@@ -75,7 +75,7 @@ def _log_group_wants(action: str, level: str) -> bool:
 
 
 def _format_audit_line(action: str, level: str, user_id, resource_type, resource_id, details, ip_address) -> str:
-    """Render an audit entry as a styled HTML line for the log group."""
+    """Render an audit entry as a styled HTML card for the log group."""
     from html import escape as _esc
 
     badges = {
@@ -83,8 +83,25 @@ def _format_audit_line(action: str, level: str, user_id, resource_type, resource
         "WARNING": "⚠️",
         "ERROR": "🚨",
     }
+    # Friendly premium-emoji labels for the common actions.
+    pretty = {
+        "user_start": ("👤", "New session"),
+        "bot_online": ("🟢", "Bot online"),
+        "balance_replenish": ("💰", "Balance top-up"),
+        "referral_signup_reward": ("🎁", "Referral reward"),
+        "promo_redeem": ("🎫", "Coupon redeemed"),
+        "purchase": ("🛒", "Purchase"),
+        "cart_checkout": ("🛍", "Checkout"),
+        "broadcast_sent": ("📢", "Broadcast"),
+        "upi_submitted": ("🧾", "UPI proof submitted"),
+        "upi_verified": ("✅", "UPI verified"),
+        "upi_denied": ("❌", "UPI denied"),
+    }
+    glyph, pretty_action = pretty.get((action or "").lower()), None
+    if glyph:
+        glyph, pretty_action = glyph
     badge = badges.get(level.upper(), "🔹")
-    head = _esc(str(action))
+    head = _esc(pretty_action or str(action))
     line = f"{badge} <b>{head}</b>"
     parts = []
     if user_id is not None:

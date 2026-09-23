@@ -226,6 +226,15 @@ async def start(message: Message, state: FSMContext):
 
     channel_username = _parse_channel_username()
 
+    # Every /start lands in the general log group (not just money events).
+    # Logged BEFORE the gate so even force-join drop-offs are visible.
+    from bot.database.methods.audit import log_audit_bg
+    log_audit_bg(
+        "user_start", user_id=user_id,
+        resource_type="User", resource_id=user_id,
+        details=f"start from @{message.from_user.username or message.from_user.first_name}",
+    )
+
     # Entry gate: force-join channels -> captcha (every start) -> menu.
     if not await run_gate(message, state, captcha=True):
         await _delete_quietly(message)
@@ -233,13 +242,6 @@ async def start(message: Message, state: FSMContext):
 
     markup = main_menu(role=role_data, channel=channel_username, helper=EnvKeys.HELPER_ID)
 
-    # Every /start lands in the general log group (not just money events).
-    from bot.database.methods.audit import log_audit_bg
-    log_audit_bg(
-        "user_start", user_id=user_id,
-        resource_type="User", resource_id=user_id,
-        details=f"start from @{message.from_user.username or message.from_user.first_name}",
-    )
     text = f"{banner(bot_name, localize('menu.hello', name=_esc(message.from_user.first_name or '')))}\n\n" \
         f"{localize('menu.start', name=bot_name)}"
     await message.answer(text, reply_markup=markup)

@@ -141,7 +141,7 @@ def btn(text: str, callback_data: str | None = None, *, url: str | None = None,
     return InlineKeyboardButton(**kwargs)
 
 
-RULE = "────────────────────────"
+RULE = "──────────────────────────"
 
 
 def banner(title: str, hi: str | None = None) -> str:

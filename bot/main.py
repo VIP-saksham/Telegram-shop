@@ -400,6 +400,17 @@ async def start_bot() -> None:
         bot_info = await bot.get_me()
         logging.info(f"Starting bot: @{bot_info.username} (ID: {bot_info.id})")
 
+        # "Bot online" heartbeat to the general log group (never blocks boot).
+        try:
+            from bot.database.methods.audit import log_audit_bg
+            log_audit_bg(
+                "bot_online", level="INFO",
+                resource_type="Bot", resource_id=bot_info.username,
+                details=f"@{bot_info.username} started and polling",
+            )
+        except Exception:  # noqa: BLE001 — heartbeat must never block boot
+            logging.debug("bot_online heartbeat skipped")
+
         await _startup(dp, bot, ctx, storage)
 
         try:
