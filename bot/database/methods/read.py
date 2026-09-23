@@ -169,6 +169,23 @@ async def count_referrals_since(user_id: int, since_ts: float) -> int:
         return (await s.execute(q)).scalar() or 0
 
 
+async def get_user_promo_redemptions(user_id: int, limit: int = 20) -> list[dict]:
+    """This user's coupon (promo) redemption history, newest first."""
+    from bot.database.models.main import PromoCodeUsages, PromoCodes
+    async with Database().session() as s:
+        rows = (await s.execute(
+            select(PromoCodeUsages, PromoCodes.code, PromoCodes.discount_value)
+            .join(PromoCodes, PromoCodes.id == PromoCodeUsages.promo_id)
+            .where(PromoCodeUsages.user_id == user_id)
+            .order_by(sa_desc(PromoCodeUsages.used_at))
+            .limit(limit)
+        )).all()
+        return [
+            {"code": code, "amount": discount_value, "date": usage.used_at}
+            for usage, code, discount_value in rows
+        ]
+
+
 async def top_referrers(limit: int = 10) -> list[dict]:
     """Users with the most referrals (for the leaderboard)."""
     async with Database().session() as s:
